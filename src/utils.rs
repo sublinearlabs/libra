@@ -31,12 +31,28 @@ pub fn build_ahg<F: Field, E: ExtensionField<F>>(
     res
 }
 
+// Algorithm 5
+pub fn initialize_phase_two<F: Field, E: ExtensionField<F>>(
+    igz: Vec<E>,
+    iux: Vec<E>,
+    f1: Vec<(usize, usize, usize)>,
+) -> Vec<E> {
+    let mut res = vec![E::zero(); iux.len()];
+
+    for (z, x, y) in f1 {
+        // It is assumed the operation poly outputs 1 where there is a valid gate
+        res[y] += igz[z] * iux[x];
+    }
+
+    res
+}
+
 #[cfg(test)]
 mod tests {
     use p3_field::{AbstractExtensionField, AbstractField, extension::BinomialExtensionField};
     use p3_mersenne_31::Mersenne31;
 
-    use crate::utils::generate_eq;
+    use crate::utils::{generate_eq, initialize_phase_two};
 
     use super::build_ahg;
 
@@ -122,5 +138,77 @@ mod tests {
         .collect();
 
         assert_eq!(ahg, expected);
+    }
+
+    #[test]
+    fn test_build_af1() {
+        //
+        //       12      30      56      90
+        //       *       *       *       *
+        //     /   \   /   \   /   \   /   \
+        //     3   4   5   6   7   8   9   10
+        //
+
+        // values (3,5) were used to generate the Igz table
+        // (1-a)(1-b) = (1-3)(1-5) = 8
+        // (1-a)b = (1-3) 5 = -10
+        // a(1-b) = 3 (1-5) = -12
+        // ab = 3*5 = 15
+
+        let igz = [
+            Mersenne31::from_canonical_usize(8),
+            -Mersenne31::from_canonical_usize(10),
+            -Mersenne31::from_canonical_usize(12),
+            Mersenne31::from_canonical_usize(15),
+        ]
+        .into_iter()
+        .map(|val| BinomialExtensionField::<Mersenne31, 3>::from_base(val))
+        .collect();
+
+        // values (4,7,3) were used to generate the Iux table
+        // (1-a)(1-b)(1-c) = (1-4)(1-7)(1-3) = -36
+        // (1-a)(1-b)c = (1-4)(1-7)3 = 54
+        // (1-a)b(1-c) = (1-4)7(1-3) = 42
+        // (1-a)b*c = (1-4)*7*3 = -63
+        // a(1-b)(1-c) = 4*(1-7)*(1-3) = 48
+        // a(1-b)c = 4*(1-7)*3 = -72
+        // a*b(1-c) = 4*7*(1-3) = -56
+        // a*b*c = 4*7*3 = 84
+
+        let iux = [
+            -Mersenne31::from_canonical_usize(36),
+            Mersenne31::from_canonical_usize(54),
+            Mersenne31::from_canonical_usize(42),
+            -Mersenne31::from_canonical_usize(63),
+            Mersenne31::from_canonical_usize(48),
+            -Mersenne31::from_canonical_usize(72),
+            -Mersenne31::from_canonical_usize(56),
+            Mersenne31::from_canonical_usize(84),
+        ]
+        .into_iter()
+        .map(|val| BinomialExtensionField::<Mersenne31, 3>::from_base(val))
+        .collect();
+
+        // f(out, left, right) in the sparse form
+        let f1 = vec![(0, 0, 1), (1, 2, 3), (2, 4, 5), (3, 6, 7)];
+
+        let af1 =
+            initialize_phase_two::<Mersenne31, BinomialExtensionField<Mersenne31, 3>>(igz, iux, f1);
+
+        let expected: Vec<_> = [
+            Mersenne31::from_canonical_usize(0),
+            -Mersenne31::from_canonical_usize(288),
+            Mersenne31::from_canonical_usize(0),
+            -Mersenne31::from_canonical_usize(420),
+            Mersenne31::from_canonical_usize(0),
+            -Mersenne31::from_canonical_usize(576),
+            Mersenne31::from_canonical_usize(0),
+            -Mersenne31::from_canonical_usize(840),
+        ]
+        .into_iter()
+        .map(|val| BinomialExtensionField::<Mersenne31, 3>::from_base(val))
+        .collect();
+
+        assert_eq!(af1, expected);
     }
 }
