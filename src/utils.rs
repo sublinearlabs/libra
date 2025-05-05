@@ -16,7 +16,7 @@ pub fn generate_eq<F: ExtensionField<F>>(points: &Vec<F>) -> Vec<F> {
 }
 
 // Algorithm 4
-pub fn build_ahg<F: Field, E: ExtensionField<F>>(
+pub fn initialize_phase_one<F: Field, E: ExtensionField<F>>(
     igz: Vec<E>,
     f1: Vec<(usize, usize, usize)>,
     f3: Vec<F>,
@@ -52,9 +52,7 @@ mod tests {
     use p3_field::{AbstractExtensionField, AbstractField, extension::BinomialExtensionField};
     use p3_mersenne_31::Mersenne31;
 
-    use crate::utils::{generate_eq, initialize_phase_two};
-
-    use super::build_ahg;
+    use crate::utils::{generate_eq, initialize_phase_one, initialize_phase_two};
 
     #[test]
     fn test_precompute() {
@@ -121,7 +119,7 @@ mod tests {
             Mersenne31::from_canonical_usize(10),
         ];
 
-        let ahg = build_ahg(igz, f1, f3);
+        let ahg = initialize_phase_one(igz, f1, f3);
 
         let expected: Vec<_> = [
             Mersenne31::from_canonical_usize(32),
