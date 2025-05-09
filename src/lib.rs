@@ -165,8 +165,6 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                 &mut transcript,
             );
 
-            dbg!("Here");
-
             challenges = resp.1;
 
             claimed_sum = Fields::Extension(resp.0);

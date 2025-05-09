@@ -67,13 +67,6 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
                     .map(|val| Fields::<F, E>::Extension(*val))
                     .collect::<Vec<Fields<F, E>>>(),
             ),
-            // MultilinearPoly::new_from_vec(
-            //     n_vars,
-            //     w_i_plus_one
-            //         .iter()
-            //         .map(|val| Fields::<F, E>::Base(*val))
-            //         .collect::<Vec<Fields<F, E>>>(),
-            // ),
         ],
         2,
         n_vars,
@@ -95,28 +88,28 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
     let iux = generate_eq(&u);
 
     // Build Af1 for mul, add_b and add_c
-    // let mul_af1 = initialize_phase_two(&igz, &iux, &mul_i);
+    let mul_af1 = initialize_phase_two(&igz, &iux, &mul_i);
 
-    // let add_b_af1 = initialize_phase_two(&igz, &iux, &add_i);
+    let add_b_af1 = initialize_phase_two(&igz, &iux, &add_i);
 
     let add_c_af1 = initialize_phase_two(&igz, &ident_ex, &add_i);
 
     let poly = VPoly::new(
         vec![
-            // MultilinearPoly::new_from_vec(
-            //     n_vars,
-            //     mul_af1
-            //         .iter()
-            //         .map(|val| Fields::<F, E>::Extension(*val))
-            //         .collect::<Vec<Fields<F, E>>>(),
-            // ),
-            // MultilinearPoly::new_from_vec(
-            //     n_vars,
-            //     add_b_af1
-            //         .iter()
-            //         .map(|val| Fields::<F, E>::Extension(*val))
-            //         .collect::<Vec<Fields<F, E>>>(),
-            // ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                mul_af1
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                add_b_af1
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
             MultilinearPoly::new_from_vec(
                 n_vars,
                 add_c_af1
@@ -124,13 +117,6 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
                     .map(|val| Fields::<F, E>::Extension(*val))
                     .collect::<Vec<Fields<F, E>>>(),
             ),
-            // MultilinearPoly::new_from_vec(
-            //     n_vars,
-            //     w_i_plus_one
-            //         .iter()
-            //         .map(|val| Fields::<F, E>::Base(*val))
-            //         .collect::<Vec<Fields<F, E>>>(),
-            // ),
         ],
         2,
         n_vars,

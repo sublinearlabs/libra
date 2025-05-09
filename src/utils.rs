@@ -57,7 +57,8 @@ pub fn combine_sumcheck_proofs<F: Field, E: ExtensionField<F>>(
         .into_iter()
         .reduce(|mut acc, val| {
             // TODO: correctly handle the combination
-            acc.round_polynomials.extend_from_slice(&val.round_polynomials);
+            acc.round_polynomials
+                .extend_from_slice(&val.round_polynomials);
             acc
         })
         .unwrap()
