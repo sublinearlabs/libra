@@ -21,6 +21,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "circuits"
+version = "0.1.0"
+source = "git+https://github.com/sublinearlabs/sl-core.git#28dcdc61c0e8fccb1580bdaece56d1b18d4032f3"
+dependencies = [
+ "p3-field",
+ "p3-goldilocks",
+ "poly",
+ "rand",
+]
+
+[[package]]
 name = "crunchy"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -77,9 +88,11 @@ checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
 name = "libra"
 version = "0.1.0"
 dependencies = [
+ "circuits",
  "p3-challenger",
  "p3-field",
  "p3-goldilocks",
+ "p3-keccak",
  "p3-mersenne-31",
  "poly",
  "sum_check",
@@ -302,7 +315,7 @@ checksum = "3b3cff922bd51709b605d9ead9aa71031d81447142d828eb4a6eba76fe619f9b"
 [[package]]
 name = "poly"
 version = "0.1.0"
-source = "git+https://github.com/sublinearlabs/sl-core.git#d7b699b3173541e52ecedcba7b7f4e932bcffcbe"
+source = "git+https://github.com/sublinearlabs/sl-core.git#28dcdc61c0e8fccb1580bdaece56d1b18d4032f3"
 dependencies = [
  "p3-challenger",
  "p3-field",
@@ -397,7 +410,7 @@ checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
 [[package]]
 name = "sum_check"
 version = "0.1.0"
-source = "git+https://github.com/sublinearlabs/sl-core.git#d7b699b3173541e52ecedcba7b7f4e932bcffcbe"
+source = "git+https://github.com/sublinearlabs/sl-core.git#28dcdc61c0e8fccb1580bdaece56d1b18d4032f3"
 dependencies = [
  "anyhow",
  "p3-challenger",
@@ -462,7 +475,7 @@ dependencies = [
 [[package]]
 name = "transcript"
 version = "0.1.0"
-source = "git+https://github.com/sublinearlabs/sl-core.git#d7b699b3173541e52ecedcba7b7f4e932bcffcbe"
+source = "git+https://github.com/sublinearlabs/sl-core.git#28dcdc61c0e8fccb1580bdaece56d1b18d4032f3"
 dependencies = [
  "p3-challenger",
  "p3-field",
