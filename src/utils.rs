@@ -1,6 +1,8 @@
+use std::rc::Rc;
+
 use p3_field::{ExtensionField, Field};
-use poly::Fields;
-use sum_check::SumCheckProof;
+use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
+use sum_check::primitives::SumCheckProof;
 
 pub fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E> {
     let mut res = vec![E::one()];
@@ -56,12 +58,158 @@ pub fn combine_sumcheck_proofs<F: Field, E: ExtensionField<F>>(
     sumcheck_proofs
         .into_iter()
         .reduce(|mut acc, val| {
-            // TODO: correctly handle the combination
             acc.round_polynomials
                 .extend_from_slice(&val.round_polynomials);
             acc
         })
         .unwrap()
+}
+
+pub fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
+    g: &Vec<E>,
+    add_i: &Vec<(usize, usize, usize)>,
+    mul_i: &Vec<(usize, usize, usize)>,
+    w_i_plus_one: &Vec<F>,
+) -> (Vec<E>, Vec<E>, Vec<E>, Vec<E>) {
+    let igz = generate_eq(&g);
+
+    let ident = vec![F::one(); w_i_plus_one.len()];
+
+    // Build Ahg for mul, add_b and add_c
+    let mul_ahg = initialize_phase_one(&igz, &mul_i, &w_i_plus_one);
+
+    // Can this be removed in the first phase?
+    let add_b_ahg = initialize_phase_one(&igz, &add_i, &ident);
+
+    let add_c_ahg = initialize_phase_one(&igz, &add_i, &w_i_plus_one);
+
+    (igz, mul_ahg, add_b_ahg, add_c_ahg)
+}
+
+// hg(x)
+pub fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
+    g: &Vec<E>,
+    add_i: &Vec<(usize, usize, usize)>,
+    mul_i: &Vec<(usize, usize, usize)>,
+    w_i_plus_one_poly: &MultilinearPoly<F, E>,
+) -> (Vec<E>, VPoly<F, E>) {
+    let (igz, mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
+        g,
+        add_i,
+        mul_i,
+        &w_i_plus_one_poly
+            .evaluations
+            .iter()
+            .map(|val| val.to_base_field().unwrap())
+            .collect::<Vec<F>>(),
+    );
+
+    let n_vars = w_i_plus_one_poly.num_vars();
+
+    (
+        igz,
+        VPoly::new(
+            vec![
+                MultilinearPoly::new_from_vec(
+                    n_vars,
+                    mul_ahg
+                        .iter()
+                        .map(|val| Fields::<F, E>::Extension(*val))
+                        .collect::<Vec<Fields<F, E>>>(),
+                ),
+                MultilinearPoly::new_from_vec(
+                    n_vars,
+                    add_b_ahg
+                        .iter()
+                        .map(|val| Fields::<F, E>::Extension(*val))
+                        .collect::<Vec<Fields<F, E>>>(),
+                ),
+                MultilinearPoly::new_from_vec(
+                    n_vars,
+                    add_c_ahg
+                        .iter()
+                        .map(|val| Fields::<F, E>::Extension(*val))
+                        .collect::<Vec<Fields<F, E>>>(),
+                ),
+                w_i_plus_one_poly.clone(),
+            ],
+            2,
+            n_vars,
+            Rc::new(|data: &[Fields<F, E>]| (data[3] * (data[0] + data[1])) + data[2]),
+        ),
+    )
+}
+
+pub fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
+    igz: &Vec<E>,
+    u: &Vec<E>,
+    add_i: &Vec<(usize, usize, usize)>,
+    mul_i: &Vec<(usize, usize, usize)>,
+    w_i_plus_one: &Vec<F>,
+) -> (Vec<E>, Vec<E>) {
+    let iux = generate_eq(u);
+
+    // Build Af1 for mul and add
+    let mul_af1 = initialize_phase_two(&igz, &iux, &mul_i);
+
+    let add_af1 = initialize_phase_two(&igz, &iux, &add_i);
+
+    (mul_af1, add_af1)
+}
+
+pub fn build_phase_two_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
+    igz: &Vec<E>,
+    u: &Vec<E>,
+    add_i: &Vec<(usize, usize, usize)>,
+    mul_i: &Vec<(usize, usize, usize)>,
+    wb: &E,
+    w_i_plus_one_poly: &MultilinearPoly<F, E>,
+) -> VPoly<F, E> {
+    let (mul_af1, add_af1) = prepare_phase_two_params(
+        igz,
+        u,
+        add_i,
+        mul_i,
+        &w_i_plus_one_poly
+            .evaluations
+            .iter()
+            .map(|val| val.to_base_field().unwrap())
+            .collect::<Vec<F>>(),
+    );
+
+    let n_vars = w_i_plus_one_poly.num_vars();
+
+    VPoly::new(
+        vec![
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                mul_af1
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                add_af1
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                vec![wb; w_i_plus_one_poly.evaluations.len()]
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(**val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            w_i_plus_one_poly.clone(),
+        ],
+        2,
+        n_vars,
+        Rc::new(|data: &[Fields<F, E>]| {
+            (data[0] * data[2] * data[3]) + (data[1] * (data[2] + data[3]))
+        }),
+    )
 }
 
 #[cfg(test)]

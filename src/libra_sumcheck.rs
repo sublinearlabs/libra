@@ -2,10 +2,11 @@ use std::rc::Rc;
 
 use p3_field::{ExtensionField, Field, PrimeField32};
 use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
-use sum_check::{SumCheck, SumCheckInterface, SumCheckProof};
+use sum_check::{SumCheck, interface::SumCheckInterface, primitives::SumCheckProof};
 use transcript::Transcript;
 
 use crate::utils::{
+    build_phase_one_libra_sumcheck_poly, build_phase_two_libra_sumcheck_poly,
     combine_sumcheck_proofs, generate_eq, initialize_phase_one, initialize_phase_two,
 };
 
@@ -13,85 +14,13 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
     g: &Vec<E>,
     add_i: &Vec<(usize, usize, usize)>,
     mul_i: &Vec<(usize, usize, usize)>,
-    w_i_plus_one: &Vec<F>,
-    claimed_sum: &E,
+    w_i_plus_one_poly: &MultilinearPoly<F, E>,
+    claimed_sum: &Fields<F, E>,
     transcript: &mut Transcript<F, E>,
 ) -> (SumCheckProof<F, E>, Vec<E>, Vec<E>, E, E) {
-    let igz = generate_eq(&g);
+    let (igz, poly) = build_phase_one_libra_sumcheck_poly(g, add_i, mul_i, w_i_plus_one_poly);
 
-    let ident = vec![F::one(); w_i_plus_one.len()];
-
-    let ident_ex = vec![E::one(); w_i_plus_one.len()];
-
-    let n_vars = (w_i_plus_one.len() as f64).log2() as usize;
-
-    // f2
-    let w_i_plus_one_poly = MultilinearPoly::new_from_vec(
-        n_vars,
-        w_i_plus_one
-            .iter()
-            .map(|val| Fields::<F, E>::Base(*val))
-            .collect::<Vec<Fields<F, E>>>(),
-    );
-
-    // Build Ahg for mul, add_b and add_c
-    let mul_ahg = initialize_phase_one(&igz, &mul_i, &w_i_plus_one);
-    dbg!(&mul_ahg);
-
-    // Can this be removed in the first phase?
-    let add_b_ahg = initialize_phase_one(&igz, &add_i, &ident);
-    dbg!(&add_b_ahg);
-
-    let add_c_ahg = initialize_phase_one(&igz, &add_i, &w_i_plus_one);
-    dbg!(&add_c_ahg);
-
-    // Ahg
-    let poly = VPoly::new(
-        vec![
-            MultilinearPoly::new_from_vec(
-                n_vars,
-                mul_ahg
-                    .iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            ),
-            MultilinearPoly::new_from_vec(
-                n_vars,
-                add_b_ahg
-                    .iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            ),
-            MultilinearPoly::new_from_vec(
-                n_vars,
-                add_c_ahg
-                    .iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            ),
-            MultilinearPoly::new_from_vec(
-                n_vars,
-                w_i_plus_one
-                    .iter()
-                    .map(|val| Fields::<F, E>::Extension(E::from_base(*val)))
-                    .collect::<Vec<Fields<F, E>>>(),
-            ),
-        ],
-        2,
-        n_vars,
-        // TODO: verify this
-        Rc::new(|data: &[Fields<F, E>]| (data[0] + data[1] + data[2]) * data[3]),
-    );
-
-    // section 3.3.1 of the libra paper
-    // let poly = VPoly::new(vec![w_i_plus_one_poly, poly_ahg], 2, n_vars, Rc::new(|data: &[Fields<F, E>]| data[0] * data[1]));
-
-    let phase_one_claimed_sum = poly.sum_over_hypercube();
-
-    dbg!(&phase_one_claimed_sum);
-
-    let (phase_one_sumcheck_proof, u) =
-        SumCheck::prove_partial(phase_one_claimed_sum, &poly, transcript).unwrap();
+    let (mut round_polys, u) = SumCheck::prove_partial(&poly, transcript).unwrap();
 
     let wb: E = w_i_plus_one_poly
         .evaluate(
@@ -101,60 +30,12 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
         )
         .to_extension_field();
 
-    let wb_poly_evals = vec![wb; w_i_plus_one.len()];
-
     // Prepare parameters for phase two
-    let iux = generate_eq(&u);
+    let poly = build_phase_two_libra_sumcheck_poly(&igz, &u, add_i, mul_i, &wb, &w_i_plus_one_poly);
 
-    // Build Af1 for mul, add_b and add_c
-    let mul_af1 = initialize_phase_two(&igz, &iux, &mul_i);
+    let (phase_two_round_polys, v) = SumCheck::prove_partial(&poly, transcript).unwrap();
 
-    // let add_b_af1 = initialize_phase_two(&igz, &iux, &add_i);
-
-    let add_c_af1 = initialize_phase_two(&igz, &ident_ex, &add_i);
-
-    let poly = VPoly::new(
-        vec![
-            MultilinearPoly::new_from_vec(
-                n_vars,
-                mul_af1
-                    .iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            ),
-            MultilinearPoly::new_from_vec(
-                n_vars,
-                wb_poly_evals
-                    .iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            ),
-            MultilinearPoly::new_from_vec(
-                n_vars,
-                add_c_af1
-                    .iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            ),
-            MultilinearPoly::new_from_vec(
-                n_vars,
-                w_i_plus_one
-                    .iter()
-                    .map(|val| Fields::<F, E>::Extension(E::from_base(*val)))
-                    .collect::<Vec<Fields<F, E>>>(),
-            ),
-        ],
-        2,
-        n_vars,
-        Rc::new(|data: &[Fields<F, E>]| (data[0] + data[1] + data[2]) * data[3]),
-    );
-
-    let phase_two_claimed_sum = poly.sum_over_hypercube();
-
-    dbg!(&phase_two_claimed_sum);
-
-    let (phase_two_sumcheck_proof, v) =
-        SumCheck::prove_partial(phase_two_claimed_sum, &poly, transcript).unwrap();
+    round_polys.extend(phase_two_round_polys);
 
     let wc = w_i_plus_one_poly
         .evaluate(
@@ -164,79 +45,162 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
         )
         .to_extension_field();
 
-    dbg!(&n_vars);
-    dbg!(&claimed_sum);
-    dbg!(&phase_one_sumcheck_proof.claimed_sum);
-    dbg!(&phase_two_sumcheck_proof.claimed_sum);
-    dbg!(
-        phase_one_sumcheck_proof.round_polynomials[0][0].to_extension_field()
-            + phase_one_sumcheck_proof.round_polynomials[0][1].to_extension_field()
-    );
+    let sumcheck_proof = SumCheckProof::new(claimed_sum.to_owned(), round_polys);
 
-    // let sumcheck_proof =
-    //     combine_sumcheck_proofs(vec![phase_one_sumcheck_proof, phase_two_sumcheck_proof]);
-
-    // dbg!(&sumcheck_proof.round_polynomials.len());
-
-    // Question???
-    // Are we to send the two sumcheck proofs?
-    // I suspect we are to combine them
-    // TODO: Determine the right way to combine them
-    (phase_one_sumcheck_proof, u, v, wb, wc)
+    (sumcheck_proof, u, v, wb, wc)
 }
 
 #[cfg(test)]
 mod tests {
-    use p3_field::{AbstractExtensionField, AbstractField, extension::BinomialExtensionField};
+    use std::rc::Rc;
+
+    use p3_field::{
+        AbstractExtensionField, AbstractField, Field, extension::BinomialExtensionField,
+    };
     use p3_mersenne_31::Mersenne31;
-    use poly::{Fields, MultilinearExtension, mle::MultilinearPoly};
-    use sum_check::{SumCheck, SumCheckInterface};
+    use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
+    use sum_check::{SumCheck, interface::SumCheckInterface};
     use transcript::Transcript;
 
     use super::prove_libra_sumcheck;
 
+    type F = Mersenne31;
+
+    type E = BinomialExtensionField<Mersenne31, 3>;
+
+    type MLE = VPoly<F, E>;
+
     #[test]
     fn test_prove_libra_sumcheck() {
-        let g: Vec<BinomialExtensionField<Mersenne31, 3>> =
-            vec![BinomialExtensionField::from_base(Mersenne31::new(3))];
+        let g = vec![E::from_base(F::new(3))];
 
         let add_i = vec![(0, 0, 1)];
 
         let mul_i = vec![(1, 2, 3)];
 
-        let w_i_plus_one = vec![
-            Mersenne31::from_canonical_usize(6),
-            Mersenne31::from_canonical_usize(6),
-            Mersenne31::from_canonical_usize(6),
-            Mersenne31::from_canonical_usize(16),
-        ];
+        let w_i_plus_one_poly = MultilinearPoly::new_from_vec(
+            2,
+            vec![6, 6, 6, 16]
+                .into_iter()
+                .map(|val| Fields::Base(F::new(val)))
+                .collect(),
+        );
 
-        // ???
-        let claimed_sum: BinomialExtensionField<Mersenne31, 3> =
-            BinomialExtensionField::from_base(Mersenne31::new(66));
+        // Traditional poly
+        let mut add_i_eval = vec![0; 32];
+        add_i_eval[1] = 1;
+        let mut add_i_bln = MultilinearPoly::new_from_vec(
+            5,
+            add_i_eval
+                .into_iter()
+                .map(|val| Fields::<F, E>::Base(F::new(val)))
+                .collect(),
+        )
+        .partial_evaluate(&[Fields::Base(F::new(3))]);
 
-        let mut transcript: Transcript<Mersenne31, BinomialExtensionField<Mersenne31, 3>> =
-            Transcript::<Mersenne31, BinomialExtensionField<Mersenne31, 3>>::init();
+        let mut expected_add_i = vec![Fields::Extension(E::from_base(F::new(0))); 16];
+        expected_add_i[1] = Fields::<F, E>::Extension(E::from_base(-F::new(2)));
+
+        assert_eq!(add_i_bln.evaluations, expected_add_i);
+
+        let mut mul_i_eval = vec![0; 32];
+        mul_i_eval[27] = 1;
+        let mut mul_i_bln = MultilinearPoly::new_from_vec(
+            5,
+            mul_i_eval
+                .into_iter()
+                .map(|val| Fields::Base(F::new(val)))
+                .collect(),
+        )
+        .partial_evaluate(&[Fields::Base(F::new(3))]);
+
+        let mut expected_mul_i = vec![Fields::Extension(E::from_base(F::new(0))); 16];
+        expected_mul_i[11] = Fields::<F, E>::Extension(E::from_base(F::new(3)));
+
+        assert_eq!(mul_i_bln.evaluations, expected_mul_i);
+
+        let wb_bln = MultilinearPoly::new_from_vec(
+            4,
+            vec![6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 16, 16, 16]
+                .into_iter()
+                .map(|val| Fields::<F, E>::Base(F::new(val)))
+                .collect(),
+        );
+
+        let wc_bln = MultilinearPoly::new_from_vec(
+            4,
+            vec![6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16]
+                .into_iter()
+                .map(|val| Fields::Base(F::new(val)))
+                .collect(),
+        );
+
+        assert_eq!(
+            wc_bln.evaluate(&[
+                Fields::Base(F::new(0)),
+                Fields::Base(F::new(0)),
+                Fields::Base(F::new(0)),
+                Fields::Base(F::new(0))
+            ]),
+            Fields::Extension(E::from_base(Mersenne31::new(6)))
+        );
+        assert_eq!(
+            wc_bln.evaluate(&[
+                Fields::Base(F::new(0)),
+                Fields::Base(F::new(1)),
+                Fields::Base(F::new(0)),
+                Fields::Base(F::new(1))
+            ]),
+            Fields::Extension(E::from_base(Mersenne31::new(6)))
+        );
+        assert_eq!(
+            wc_bln.evaluate(&[
+                Fields::Base(F::new(1)),
+                Fields::Base(F::new(0)),
+                Fields::Base(F::new(1)),
+                Fields::Base(F::new(0))
+            ]),
+            Fields::Extension(E::from_base(F::new(6)))
+        );
+        assert_eq!(
+            wc_bln.evaluate(&[
+                Fields::Base(F::new(1)),
+                Fields::Base(F::new(1)),
+                Fields::Base(F::new(1)),
+                Fields::Base(F::new(1))
+            ]),
+            Fields::Extension(E::from_base(F::new(16)))
+        );
+
+        let claimed_sum = VPoly::new(
+            vec![add_i_bln, mul_i_bln, wb_bln, wc_bln],
+            2,
+            4,
+            Rc::new(|data| {
+                Fields::Extension(
+                    (data[0].to_extension_field()
+                        * (data[2].to_extension_field() + data[3].to_extension_field()))
+                        + (data[1].to_extension_field()
+                            * (data[2].to_extension_field() * data[3].to_extension_field())),
+                )
+            }),
+        )
+        .sum_over_hypercube();
+
+        let mut transcript = Transcript::<F, E>::init();
 
         let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
             &g,
             &add_i,
             &mul_i,
-            &w_i_plus_one,
+            &w_i_plus_one_poly,
             &claimed_sum,
             &mut transcript,
         );
 
-        let mut transcript: Transcript<Mersenne31, BinomialExtensionField<Mersenne31, 3>> =
-            Transcript::<Mersenne31, BinomialExtensionField<Mersenne31, 3>>::init();
+        let mut transcript = Transcript::<F, E>::init();
 
-        // ???
-        // let polynomial =
-
-        // let verify = SumCheck::verify(polynomial, &proof, &mut transcript);
-
-        dbg!(proof.round_polynomials);
-
-        // assert!(verify.unwrap());
+        let (claimed_sum, challenges) =
+            SumCheck::<F, E, MLE>::verify_partial(&proof, &mut transcript);
     }
 }

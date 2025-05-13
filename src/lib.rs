@@ -11,7 +11,7 @@ use circuits::{
 use libra_sumcheck::prove_libra_sumcheck;
 use p3_field::{ExtensionField, Field, PrimeField32};
 use poly::{Fields, MultilinearExtension, mle::MultilinearPoly};
-use sum_check::{SumCheck, SumCheckInterface, SumCheckProof};
+use sum_check::{SumCheck, interface::SumCheckInterface, primitives::SumCheckProof};
 use transcript::Transcript;
 
 pub mod libra_sumcheck;
@@ -95,9 +95,13 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
         let (mut add_i, mut mul_i) =
             LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, circuit.layers.len() - 1);
 
-        let mut w_i_plus_one = &output.layers[output.layers.len() - 2];
-
-        dbg!(&w_i_plus_one);
+        let mut w_i_plus_one_poly = MultilinearPoly::new_from_vec(
+            (output.layers[output.layers.len() - 2].len() as f64).log2() as usize,
+            output.layers[output.layers.len() - 2]
+                .iter()
+                .map(|val| Fields::Base(*val))
+                .collect::<Vec<Fields<F, E>>>(),
+        );
 
         let mut alpha_n_beta = Vec::with_capacity(2);
 
@@ -106,8 +110,8 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                 &g,
                 &add_i,
                 &mul_i,
-                &w_i_plus_one,
-                &claimed_sum.to_extension_field(),
+                &w_i_plus_one_poly,
+                &claimed_sum,
                 &mut transcript,
             );
 
@@ -145,9 +149,15 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             dbg!(&add_i);
             dbg!(&mul_i);
 
-            w_i_plus_one = &output.layers[i - 1];
+            w_i_plus_one_poly = MultilinearPoly::new_from_vec(
+                (output.layers[i - 1].len() as f64).log2() as usize,
+                output.layers[i - 1]
+                    .iter()
+                    .map(|val| Fields::Base(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            );
 
-            dbg!(&w_i_plus_one);
+            dbg!(&w_i_plus_one_poly);
         }
 
         LibraProof::new(
@@ -205,7 +215,8 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
 
         for i in 0..proofs.sumcheck_proofs.len() {
             dbg!("Verification round:", i);
-            dbg!("{:#?}", &proofs.sumcheck_proofs[0].round_polynomials);
+            dbg!("{:#?}", &proofs.sumcheck_proofs[i].claimed_sum);
+            dbg!("{:#?}", &proofs.sumcheck_proofs[i].round_polynomials);
 
             let (_claimed_sum, rb_n_rc) = SumCheck::<F, E, MultilinearPoly<F, E>>::verify_partial(
                 &proofs.sumcheck_proofs[i],
@@ -246,7 +257,7 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             dbg!(&alpha_n_beta);
 
             // Convert addi and muli to sparse rep and evaluate it
-            let nvars = compute_num_vars(i);
+            let nvars = compute_num_vars(i, circuit.layers.len());
 
             dbg!(nvars);
 
