@@ -73,7 +73,7 @@ mod tests {
 
     use super::prove_libra_sumcheck;
 
-    use crate::utils::prepare_phase_one_params;
+    use crate::utils::{prepare_phase_one_params, prepare_phase_one_params_with_alpha_beta_rb_rc};
 
     type F = Mersenne31;
 
@@ -202,6 +202,181 @@ mod tests {
 
         let (igz, mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
             &g,
+            &add_i,
+            &mul_i,
+            &w_i_plus_one_poly
+                .evaluations
+                .iter()
+                .map(|val| val.to_base_field().unwrap())
+                .collect::<Vec<F>>(),
+        );
+
+        let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
+            &igz,
+            &mul_ahg,
+            &add_b_ahg,
+            &add_c_ahg,
+            &add_i,
+            &mul_i,
+            &w_i_plus_one_poly,
+            &claimed_sum,
+            &mut transcript,
+        );
+
+        let mut transcript = Transcript::<F, E>::init();
+
+        let (claimed_sum, challenges) =
+            SumCheck::<F, E, MLE>::verify_partial(&proof, &mut transcript);
+    }
+
+    #[test]
+    fn test_prove_alpha_beta_folding() {
+        let rb = vec![E::from_base(F::new(2))];
+        let rc = vec![E::from_base(F::new(4))];
+        let alpha_n_beta = vec![E::from_base(F::new(3)), E::from_base(F::new(5))];
+
+        let add_i = vec![(0, 0, 1)];
+
+        let mul_i = vec![(1, 2, 3)];
+
+        let w_i_plus_one_poly = MultilinearPoly::new_from_vec(
+            2,
+            vec![6, 6, 6, 16]
+                .into_iter()
+                .map(|val| Fields::Base(F::new(val)))
+                .collect(),
+        );
+
+        // Traditional poly
+        let mut add_i_eval = vec![0; 32];
+        add_i_eval[1] = 1;
+
+        let mut add_i_poly = MultilinearPoly::new_from_vec(
+            5,
+            add_i_eval
+                .into_iter()
+                .map(|val| Fields::<F, E>::Base(F::new(val)))
+                .collect(),
+        );
+
+        let add_rb_alpha = add_i_poly
+            .partial_evaluate(
+                &rb.iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            )
+            .evaluations
+            .iter()
+            .map(|val| val.to_extension_field() * alpha_n_beta[0])
+            .collect::<Vec<E>>();
+        let add_rc_beta = add_i_poly
+            .partial_evaluate(
+                &rc.iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            )
+            .evaluations
+            .iter()
+            .map(|val| val.to_extension_field() * alpha_n_beta[1])
+            .collect::<Vec<E>>();
+        let comb_add = add_rb_alpha
+            .iter()
+            .zip(add_rc_beta)
+            .map(|(lhs, rhs)| *lhs + rhs)
+            .collect::<Vec<E>>();
+
+        let mut mul_i_eval = vec![0; 32];
+        mul_i_eval[27] = 1;
+
+        let mut mul_i_poly = MultilinearPoly::new_from_vec(
+            5,
+            mul_i_eval
+                .into_iter()
+                .map(|val| Fields::Base(F::new(val)))
+                .collect(),
+        );
+
+        let mul_rb_alpha = mul_i_poly
+            .partial_evaluate(
+                &rb.iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            )
+            .evaluations
+            .iter()
+            .map(|val| val.to_extension_field() * alpha_n_beta[0])
+            .collect::<Vec<E>>();
+        let mul_rc_beta = mul_i_poly
+            .partial_evaluate(
+                &rc.iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            )
+            .evaluations
+            .iter()
+            .map(|val| val.to_extension_field() * alpha_n_beta[1])
+            .collect::<Vec<E>>();
+        let comb_mul = mul_rb_alpha
+            .iter()
+            .zip(mul_rc_beta)
+            .map(|(lhs, rhs)| *lhs + rhs)
+            .collect::<Vec<E>>();
+
+        let wb_bln = MultilinearPoly::new_from_vec(
+            4,
+            vec![6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 16, 16, 16]
+                .into_iter()
+                .map(|val| Fields::<F, E>::Base(F::new(val)))
+                .collect(),
+        );
+
+        let wc_bln = MultilinearPoly::new_from_vec(
+            4,
+            vec![6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16]
+                .into_iter()
+                .map(|val| Fields::<F, E>::Base(F::new(val)))
+                .collect(),
+        );
+
+        let new_addi_bln = MultilinearPoly::new_from_vec(
+            4,
+            comb_add
+                .into_iter()
+                .map(|val| Fields::<F, E>::Extension(val))
+                .collect(),
+        );
+
+        let new_muli_bln = MultilinearPoly::new_from_vec(
+            4,
+            comb_mul
+                .into_iter()
+                .map(|val| Fields::<F, E>::Extension(val))
+                .collect(),
+        );
+
+        let claimed_sum = VPoly::new(
+            vec![new_addi_bln, new_muli_bln, wb_bln, wc_bln],
+            2,
+            4,
+            Rc::new(|data| {
+                Fields::Extension(
+                    (data[0].to_extension_field()
+                        * (data[2].to_extension_field() + data[3].to_extension_field()))
+                        + (data[1].to_extension_field()
+                            * (data[2].to_extension_field() * data[3].to_extension_field())),
+                )
+            }),
+        )
+        .sum_over_hypercube();
+
+        // let claimed_sum = Fields::<F, E>::Base(F::new(2281));
+
+        let mut transcript = Transcript::<F, E>::init();
+
+        let (igz, mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params_with_alpha_beta_rb_rc(
+            &rb,
+            &rc,
+            &alpha_n_beta,
             &add_i,
             &mul_i,
             &w_i_plus_one_poly
