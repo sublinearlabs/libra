@@ -13,6 +13,10 @@ use p3_field::{ExtensionField, Field, PrimeField32};
 use poly::{Fields, MultilinearExtension, mle::MultilinearPoly};
 use sum_check::{SumCheck, interface::SumCheckInterface, primitives::SumCheckProof};
 use transcript::Transcript;
+use utils::{
+    generate_eq, initialize_phase_one, prepare_phase_one_params,
+    prepare_phase_one_params_with_alpha_beta_rb_rc,
+};
 
 pub mod libra_sumcheck;
 pub mod utils;
@@ -54,7 +58,7 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
 
         let mut wcs = vec![];
 
-        let mut layer_evaluations: Vec<Fields<F, E>> =
+        let mut output_evals: Vec<Fields<F, E>> =
             if output.layers[output.layers.len() - 1].len() <= 1 {
                 [
                     output.layers[output.layers.len() - 1].clone(),
@@ -71,26 +75,20 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                     .collect()
             };
 
-        let mut layer_mle = MultilinearPoly::new_from_vec(
-            (layer_evaluations.len() as f64).log2() as usize,
-            layer_evaluations,
+        let mut output_mle = MultilinearPoly::new_from_vec(
+            (output_evals.len() as f64).log2() as usize,
+            output_evals,
         );
-
-        dbg!(&layer_mle);
 
         transcript.observe_base_element(&output.layers[output.layers.len() - 1]);
 
-        let mut g = transcript.sample_n_challenges(layer_mle.num_vars());
+        let mut g = transcript.sample_n_challenges(output_mle.num_vars());
 
-        let mut claimed_sum = layer_mle.evaluate(
+        let mut claimed_sum = output_mle.evaluate(
             &g.iter()
                 .map(|val| Fields::Extension(*val))
                 .collect::<Vec<Fields<F, E>>>(),
         );
-
-        dbg!(&g);
-        dbg!(&claimed_sum);
-        dbg!(&circuit.layers.len());
 
         let (mut add_i, mut mul_i) =
             LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, circuit.layers.len() - 1);
@@ -103,11 +101,23 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                 .collect::<Vec<Fields<F, E>>>(),
         );
 
-        let mut alpha_n_beta = Vec::with_capacity(2);
+        let (mut igz, mut mul_ahg, mut add_b_ahg, mut add_c_ahg) = prepare_phase_one_params(
+            &g,
+            &add_i,
+            &mul_i,
+            &w_i_plus_one_poly
+                .evaluations
+                .iter()
+                .map(|val| val.to_base_field().unwrap())
+                .collect::<Vec<F>>(),
+        );
 
-        for i in (1..output.layers.len() - 1).rev() {
-            let (sumcheck_proof, rb, rc, wb, wc) = prove_libra_sumcheck::<F, E>(
-                &g,
+        for i in (1..output.layers.len()).rev() {
+            let (sumcheck_proof, rb, rc, wb, wc) = prove_libra_sumcheck(
+                &igz,
+                &mul_ahg,
+                &add_b_ahg,
+                &add_c_ahg,
                 &add_i,
                 &mul_i,
                 &w_i_plus_one_poly,
@@ -119,45 +129,34 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             wbs.push(wb);
             wcs.push(wc);
 
-            alpha_n_beta = transcript.sample_n_challenges(2);
-
-            dbg!(&alpha_n_beta);
+            let alpha_n_beta = transcript.sample_n_challenges(2);
 
             claimed_sum = Fields::Extension((alpha_n_beta[0] * wb) + (alpha_n_beta[1] * wc));
 
-            dbg!(claimed_sum);
-
-            layer_evaluations = output.layers[i]
-                .iter()
-                .map(|val| Fields::<F, E>::Base(*val))
-                .collect();
-
-            layer_mle = MultilinearPoly::new_from_vec(
-                (layer_evaluations.len() as f64).log2() as usize,
-                layer_evaluations,
-            );
-
-            dbg!(&layer_mle);
-
-            transcript.observe_base_element(&output.layers[i]);
-
-            dbg!("Layer: ", i);
-
-            // TODO: get new addi and muli based on rb and rc
+            // Get addi and muli
             (add_i, mul_i) = LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, i - 1);
-
-            dbg!(&add_i);
-            dbg!(&mul_i);
 
             w_i_plus_one_poly = MultilinearPoly::new_from_vec(
                 (output.layers[i - 1].len() as f64).log2() as usize,
                 output.layers[i - 1]
                     .iter()
-                    .map(|val| Fields::Base(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
+                    .map(|val| Fields::<F, E>::Base(*val))
+                    .collect(),
             );
 
-            dbg!(&w_i_plus_one_poly);
+            // Gets new addi and muli based on rb, rc, alpha and beta
+            (igz, mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params_with_alpha_beta_rb_rc(
+                &rb,
+                &rc,
+                &alpha_n_beta,
+                &add_i,
+                &mul_i,
+                &w_i_plus_one_poly
+                    .evaluations
+                    .iter()
+                    .map(|val| val.to_base_field().unwrap())
+                    .collect::<Vec<F>>(),
+            );
         }
 
         LibraProof::new(
@@ -192,110 +191,35 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                 .collect()
         };
 
-        dbg!(&output);
-
         let output_mle =
             MultilinearPoly::new_from_vec((output.len() as f64).log2() as usize, output);
 
-        let mut challenge = transcript
+        let mut g = transcript
             .sample_n_challenges(output_mle.num_vars())
             .iter()
             .map(|val| Fields::Extension(*val))
             .collect::<Vec<Fields<F, E>>>();
 
-        dbg!(&challenge);
-
-        let mut claimed_sum = output_mle.evaluate(&challenge);
-
-        dbg!("Verifier claimed sum: ", claimed_sum);
+        let mut claimed_sum = output_mle.evaluate(&g);
 
         let mut rb = vec![];
 
         let mut rc = vec![];
 
         for i in 0..proofs.sumcheck_proofs.len() {
-            dbg!("Verification round:", i);
-            dbg!("{:#?}", &proofs.sumcheck_proofs[i].claimed_sum);
-            dbg!("{:#?}", &proofs.sumcheck_proofs[i].round_polynomials);
-
             let (_claimed_sum, rb_n_rc) = SumCheck::<F, E, MultilinearPoly<F, E>>::verify_partial(
                 &proofs.sumcheck_proofs[i],
                 &mut transcript,
             );
 
-            let mut rb_b_c = rb.clone();
+            rb = rb_n_rc[..rb_n_rc.len() / 2].to_vec();
 
-            rb_b_c.extend(&rb_n_rc);
-
-            let mut rc_b_c = rc.clone();
-
-            rc_b_c.extend(&rb_n_rc);
-
-            dbg!(&challenge);
-            dbg!(&rb);
-            dbg!(&rc);
-            dbg!(&rb_n_rc);
-            dbg!(&rb_b_c);
-            dbg!(&rc_b_c);
-
-            (rb, rc) = (
-                rb_n_rc[..rb_n_rc.len() / 2].to_vec(),
-                rb_n_rc[(rb_n_rc.len() / 2)..].to_vec(),
-            );
-
-            dbg!(&circuit.layers[circuit.layers.len() - i - 1]);
-
-            let (add_i, mul_i) = LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(
-                circuit,
-                circuit.layers.len() - i - 1,
-            );
-
-            dbg!(&add_i);
+            rc = rb_n_rc[(rb_n_rc.len() / 2)..].to_vec();
 
             let alpha_n_beta = transcript.sample_n_challenges(2);
 
-            dbg!(&alpha_n_beta);
-
-            // Convert addi and muli to sparse rep and evaluate it
-            let nvars = compute_num_vars(i, circuit.layers.len());
-
-            dbg!(nvars);
-
-            dbg!(2_usize.pow(nvars as u32));
-
-            dbg!(i);
-
-            let add_i_mle_vec = add_i.iter().fold(vec![], |mut acc, (a, b, c)| {
-                dbg!(i);
-                // verify the layer index
-                let res = get_gate_properties(*a, *b, *c, i);
-                acc.push(res);
-                acc
-            });
-
-            let mul_i_mle_vec = mul_i.iter().fold(vec![], |mut acc, (a, b, c)| {
-                dbg!(i);
-                // verify the layer index
-                let res = get_gate_properties(*a, *b, *c, i);
-                acc.push(res);
-                acc
-            });
-
-            let add_i_poly: MultilinearPoly<F, E> = mle_vec_to_poly(&add_i_mle_vec, nvars);
-            let mul_i_poly: MultilinearPoly<F, E> = mle_vec_to_poly(&mul_i_mle_vec, nvars);
-
-            dbg!(&mul_i_poly.evaluations.len());
-            dbg!(&mul_i_poly.sum_over_hypercube());
-
-            let new_addi = (alpha_n_beta[0] * add_i_poly.evaluate(&rb_b_c).to_extension_field())
-                + (alpha_n_beta[1] * add_i_poly.evaluate(&rc_b_c).to_extension_field());
-
-            let new_muli = (alpha_n_beta[0] * mul_i_poly.evaluate(&rb_b_c).to_extension_field())
-                + (alpha_n_beta[1] * mul_i_poly.evaluate(&rc_b_c).to_extension_field());
-
             claimed_sum = Fields::Extension(
-                (new_addi * (proofs.wbs[i] + proofs.wcs[i]))
-                    + (new_muli * proofs.wbs[i] * proofs.wcs[i]),
+                (alpha_n_beta[0] * proofs.wbs[i]) + (alpha_n_beta[1] * proofs.wcs[i]),
             );
         }
 
@@ -350,10 +274,8 @@ mod tests {
 
         let output = circuit.excecute(&input);
 
-        dbg!("Proving starting...");
         let proof: LibraProof<Mersenne31, BinomialExtensionField<Mersenne31, 3>> =
             Libra::prove(&circuit, output);
-        dbg!("Proving finished...");
 
         dbg!("Verification starting...");
         let verify = Libra::verify(&circuit, proof, input);

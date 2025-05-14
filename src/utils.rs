@@ -88,56 +88,99 @@ pub fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
 
 // hg(x)
 pub fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
-    g: &Vec<E>,
-    add_i: &Vec<(usize, usize, usize)>,
-    mul_i: &Vec<(usize, usize, usize)>,
+    mul_ahg: &Vec<E>,
+    add_b_ahg: &Vec<E>,
+    add_c_ahg: &Vec<E>,
     w_i_plus_one_poly: &MultilinearPoly<F, E>,
-) -> (Vec<E>, VPoly<F, E>) {
-    let (igz, mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
-        g,
-        add_i,
-        mul_i,
-        &w_i_plus_one_poly
-            .evaluations
-            .iter()
-            .map(|val| val.to_base_field().unwrap())
-            .collect::<Vec<F>>(),
-    );
-
+) -> VPoly<F, E> {
     let n_vars = w_i_plus_one_poly.num_vars();
 
-    (
-        igz,
-        VPoly::new(
-            vec![
-                MultilinearPoly::new_from_vec(
-                    n_vars,
-                    mul_ahg
-                        .iter()
-                        .map(|val| Fields::<F, E>::Extension(*val))
-                        .collect::<Vec<Fields<F, E>>>(),
-                ),
-                MultilinearPoly::new_from_vec(
-                    n_vars,
-                    add_b_ahg
-                        .iter()
-                        .map(|val| Fields::<F, E>::Extension(*val))
-                        .collect::<Vec<Fields<F, E>>>(),
-                ),
-                MultilinearPoly::new_from_vec(
-                    n_vars,
-                    add_c_ahg
-                        .iter()
-                        .map(|val| Fields::<F, E>::Extension(*val))
-                        .collect::<Vec<Fields<F, E>>>(),
-                ),
-                w_i_plus_one_poly.clone(),
-            ],
-            2,
-            n_vars,
-            Rc::new(|data: &[Fields<F, E>]| (data[3] * (data[0] + data[1])) + data[2]),
-        ),
+    VPoly::new(
+        vec![
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                mul_ahg
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                add_b_ahg
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                add_c_ahg
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            w_i_plus_one_poly.clone(),
+        ],
+        2,
+        n_vars,
+        Rc::new(|data: &[Fields<F, E>]| (data[3] * (data[0] + data[1])) + data[2]),
     )
+}
+
+pub fn prepare_phase_one_params_with_alpha_beta_rb_rc<F: Field, E: ExtensionField<F>>(
+    rb: &Vec<E>,
+    rc: &Vec<E>,
+    alpha_n_beta: &[E],
+    add_i: &Vec<(usize, usize, usize)>,
+    mul_i: &Vec<(usize, usize, usize)>,
+    w_i_plus_one: &Vec<F>,
+) -> (Vec<E>, Vec<E>, Vec<E>, Vec<E>) {
+    let ident = vec![F::one(); w_i_plus_one.len()];
+
+    // get Igz for rb and rc
+    let alpha_rb_igz: Vec<E> = generate_eq(&rb)
+        .iter()
+        .map(|val| *val * alpha_n_beta[0])
+        .collect::<Vec<E>>();
+    let beta_rc_igz: Vec<E> = generate_eq(&rc)
+        .iter()
+        .map(|val| *val * alpha_n_beta[1])
+        .collect::<Vec<E>>();
+    let new_igz = alpha_rb_igz
+        .iter()
+        .zip(&beta_rc_igz)
+        .map(|(rhs, lhs)| *rhs + *lhs)
+        .collect::<Vec<E>>();
+
+    // Get new_addi_b for rb and rc
+    let new_addi_b_ahg: Vec<E> = initialize_phase_one(&new_igz, add_i, &ident);
+    // let rc_addi_b_ahg: Vec<E> = initialize_phase_one(&beta_igz_rc, add_i, &ident);
+    // let new_addi_b_ahg = rb_addi_b_ahg
+    //     .iter()
+    //     .zip(rc_addi_b_ahg)
+    //     .map(|(rhs, lhs)| *rhs + lhs)
+    //     .collect::<Vec<E>>();
+
+    // Get new_addi_c for rb and rc
+    let new_addi_c_ahg = initialize_phase_one(&new_igz, add_i, w_i_plus_one);
+    // let rc_addi_c_ahg = initialize_phase_one(&beta_igz_rc, add_i, w_i_plus_one);
+
+    // let new_addi_c_ahg = rb_addi_c_ahg
+    //     .iter()
+    //     .zip(rc_addi_c_ahg)
+    //     .map(|(rhs, lhs)| *rhs + lhs)
+    //     .collect::<Vec<E>>();
+
+    // Get new_muli for rb and rc
+    let new_mul_ahg = initialize_phase_one(&new_igz, mul_i, w_i_plus_one);
+    // let rc_mul_ahg = initialize_phase_one(&beta_igz_rc, mul_i, w_i_plus_one);
+    // let new_mul_ahg = rb_mul_ahg
+    //     .iter()
+    //     .zip(rc_mul_ahg)
+    //     .map(|(rhs, lhs)| *rhs + lhs)
+    //     .collect::<Vec<E>>();
+
+    // put correct new igz
+    (new_igz, new_mul_ahg, new_addi_b_ahg, new_addi_c_ahg)
 }
 
 pub fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
@@ -145,7 +188,6 @@ pub fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
     u: &Vec<E>,
     add_i: &Vec<(usize, usize, usize)>,
     mul_i: &Vec<(usize, usize, usize)>,
-    w_i_plus_one: &Vec<F>,
 ) -> (Vec<E>, Vec<E>) {
     let iux = generate_eq(u);
 
@@ -158,25 +200,11 @@ pub fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
 }
 
 pub fn build_phase_two_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
-    igz: &Vec<E>,
-    u: &Vec<E>,
-    add_i: &Vec<(usize, usize, usize)>,
-    mul_i: &Vec<(usize, usize, usize)>,
+    mul_af1: &Vec<E>,
+    add_af1: &Vec<E>,
     wb: &E,
     w_i_plus_one_poly: &MultilinearPoly<F, E>,
 ) -> VPoly<F, E> {
-    let (mul_af1, add_af1) = prepare_phase_two_params(
-        igz,
-        u,
-        add_i,
-        mul_i,
-        &w_i_plus_one_poly
-            .evaluations
-            .iter()
-            .map(|val| val.to_base_field().unwrap())
-            .collect::<Vec<F>>(),
-    );
-
     let n_vars = w_i_plus_one_poly.num_vars();
 
     VPoly::new(

@@ -8,19 +8,24 @@ use transcript::Transcript;
 use crate::utils::{
     build_phase_one_libra_sumcheck_poly, build_phase_two_libra_sumcheck_poly,
     combine_sumcheck_proofs, generate_eq, initialize_phase_one, initialize_phase_two,
+    prepare_phase_two_params,
 };
 
 pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
-    g: &Vec<E>,
+    igz: &Vec<E>,
+    mul_ahg: &Vec<E>,
+    add_b_ahg: &Vec<E>,
+    add_c_ahg: &Vec<E>,
     add_i: &Vec<(usize, usize, usize)>,
     mul_i: &Vec<(usize, usize, usize)>,
     w_i_plus_one_poly: &MultilinearPoly<F, E>,
     claimed_sum: &Fields<F, E>,
     transcript: &mut Transcript<F, E>,
 ) -> (SumCheckProof<F, E>, Vec<E>, Vec<E>, E, E) {
-    let (igz, poly) = build_phase_one_libra_sumcheck_poly(g, add_i, mul_i, w_i_plus_one_poly);
+    let phase_one_poly =
+        build_phase_one_libra_sumcheck_poly(mul_ahg, add_b_ahg, add_c_ahg, w_i_plus_one_poly);
 
-    let (mut round_polys, u) = SumCheck::prove_partial(&poly, transcript).unwrap();
+    let (mut round_polys, u) = SumCheck::prove_partial(&phase_one_poly, transcript).unwrap();
 
     let wb: E = w_i_plus_one_poly
         .evaluate(
@@ -31,9 +36,13 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
         .to_extension_field();
 
     // Prepare parameters for phase two
-    let poly = build_phase_two_libra_sumcheck_poly(&igz, &u, add_i, mul_i, &wb, &w_i_plus_one_poly);
 
-    let (phase_two_round_polys, v) = SumCheck::prove_partial(&poly, transcript).unwrap();
+    let (mul_af1, add_af1) = prepare_phase_two_params(igz, &u, add_i, mul_i);
+
+    let phase_two_poly =
+        build_phase_two_libra_sumcheck_poly(&mul_af1, &add_af1, &wb, w_i_plus_one_poly);
+
+    let (phase_two_round_polys, v) = SumCheck::prove_partial(&phase_two_poly, transcript).unwrap();
 
     round_polys.extend(phase_two_round_polys);
 
@@ -63,6 +72,8 @@ mod tests {
     use transcript::Transcript;
 
     use super::prove_libra_sumcheck;
+
+    use crate::utils::prepare_phase_one_params;
 
     type F = Mersenne31;
 
@@ -189,8 +200,22 @@ mod tests {
 
         let mut transcript = Transcript::<F, E>::init();
 
-        let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
+        let (igz, mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
             &g,
+            &add_i,
+            &mul_i,
+            &w_i_plus_one_poly
+                .evaluations
+                .iter()
+                .map(|val| val.to_base_field().unwrap())
+                .collect::<Vec<F>>(),
+        );
+
+        let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
+            &igz,
+            &mul_ahg,
+            &add_b_ahg,
+            &add_c_ahg,
             &add_i,
             &mul_i,
             &w_i_plus_one_poly,
