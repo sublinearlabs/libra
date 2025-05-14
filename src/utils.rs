@@ -78,7 +78,6 @@ pub fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
     // Build Ahg for mul, add_b and add_c
     let mul_ahg = initialize_phase_one(&igz, &mul_i, &w_i_plus_one);
 
-    // Can this be removed in the first phase?
     let add_b_ahg = initialize_phase_one(&igz, &add_i, &ident);
 
     let add_c_ahg = initialize_phase_one(&igz, &add_i, &w_i_plus_one);
@@ -153,33 +152,11 @@ pub fn prepare_phase_one_params_with_alpha_beta_rb_rc<F: Field, E: ExtensionFiel
 
     // Get new_addi_b for rb and rc
     let new_addi_b_ahg: Vec<E> = initialize_phase_one(&new_igz, add_i, &ident);
-    // let rc_addi_b_ahg: Vec<E> = initialize_phase_one(&beta_igz_rc, add_i, &ident);
-    // let new_addi_b_ahg = rb_addi_b_ahg
-    //     .iter()
-    //     .zip(rc_addi_b_ahg)
-    //     .map(|(rhs, lhs)| *rhs + lhs)
-    //     .collect::<Vec<E>>();
 
-    // Get new_addi_c for rb and rc
     let new_addi_c_ahg = initialize_phase_one(&new_igz, add_i, w_i_plus_one);
-    // let rc_addi_c_ahg = initialize_phase_one(&beta_igz_rc, add_i, w_i_plus_one);
 
-    // let new_addi_c_ahg = rb_addi_c_ahg
-    //     .iter()
-    //     .zip(rc_addi_c_ahg)
-    //     .map(|(rhs, lhs)| *rhs + lhs)
-    //     .collect::<Vec<E>>();
-
-    // Get new_muli for rb and rc
     let new_mul_ahg = initialize_phase_one(&new_igz, mul_i, w_i_plus_one);
-    // let rc_mul_ahg = initialize_phase_one(&beta_igz_rc, mul_i, w_i_plus_one);
-    // let new_mul_ahg = rb_mul_ahg
-    //     .iter()
-    //     .zip(rc_mul_ahg)
-    //     .map(|(rhs, lhs)| *rhs + lhs)
-    //     .collect::<Vec<E>>();
 
-    // put correct new igz
     (new_igz, new_mul_ahg, new_addi_b_ahg, new_addi_c_ahg)
 }
 

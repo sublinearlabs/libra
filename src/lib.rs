@@ -252,7 +252,7 @@ mod tests {
     use crate::{Libra, LibraProof};
 
     #[test]
-    fn test_libra() {
+    fn test_libra_protocol() {
         let circuit = LayeredCircuit::new(vec![
             Layer::new(vec![
                 Gate::new(GateOp::Mul, [0, 1]),
