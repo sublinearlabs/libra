@@ -1,12 +1,16 @@
-use p3_field::{ExtensionField, Field};
+use std::rc::Rc;
 
-pub fn generate_eq<F: ExtensionField<F>>(points: &Vec<F>) -> Vec<F> {
-    let mut res = vec![F::one()];
+use p3_field::{ExtensionField, Field};
+use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
+use sum_check::primitives::SumCheckProof;
+
+pub fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E> {
+    let mut res = vec![E::one()];
 
     for point in points {
         let mut v = vec![];
         for val in &res {
-            v.push(*val * (F::one() - *point));
+            v.push(*val * (E::one() - *point));
             v.push(*val * *point);
         }
         res = v;
@@ -17,15 +21,15 @@ pub fn generate_eq<F: ExtensionField<F>>(points: &Vec<F>) -> Vec<F> {
 
 // Algorithm 4
 pub fn initialize_phase_one<F: Field, E: ExtensionField<F>>(
-    igz: Vec<E>,
-    f1: Vec<(usize, usize, usize)>,
-    f3: Vec<F>,
+    igz: &[E],
+    f1: &[(usize, usize, usize)],
+    f3: &[F],
 ) -> Vec<E> {
     let mut res = vec![E::zero(); f3.len()];
 
     for (z, x, y) in f1 {
         // It is assumed the operation poly outputs 1 where there is a valid gate
-        res[x] += igz[z] * f3[y];
+        res[*x] += igz[*z] * f3[*y];
     }
 
     res
@@ -33,18 +37,184 @@ pub fn initialize_phase_one<F: Field, E: ExtensionField<F>>(
 
 // Algorithm 5
 pub fn initialize_phase_two<F: Field, E: ExtensionField<F>>(
-    igz: Vec<E>,
-    iux: Vec<E>,
-    f1: Vec<(usize, usize, usize)>,
+    igz: &Vec<E>,
+    iux: &Vec<E>,
+    f1: &Vec<(usize, usize, usize)>,
 ) -> Vec<E> {
     let mut res = vec![E::zero(); iux.len()];
 
     for (z, x, y) in f1 {
         // It is assumed the operation poly outputs 1 where there is a valid gate
-        res[y] += igz[z] * iux[x];
+        res[*y] += igz[*z] * iux[*x];
     }
 
     res
+}
+
+// Combines a vector of sumcheck proofs into one sumcheck proof
+pub fn combine_sumcheck_proofs<F: Field, E: ExtensionField<F>>(
+    sumcheck_proofs: Vec<SumCheckProof<F, E>>,
+) -> SumCheckProof<F, E> {
+    sumcheck_proofs
+        .into_iter()
+        .reduce(|mut acc, val| {
+            acc.round_polynomials
+                .extend_from_slice(&val.round_polynomials);
+            acc
+        })
+        .unwrap()
+}
+
+pub fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
+    g: &Vec<E>,
+    add_i: &Vec<(usize, usize, usize)>,
+    mul_i: &Vec<(usize, usize, usize)>,
+    w_i_plus_one: &Vec<F>,
+) -> (Vec<E>, Vec<E>, Vec<E>, Vec<E>) {
+    let igz = generate_eq(&g);
+
+    let ident = vec![F::one(); w_i_plus_one.len()];
+
+    // Build Ahg for mul, add_b and add_c
+    let mul_ahg = initialize_phase_one(&igz, &mul_i, &w_i_plus_one);
+
+    let add_b_ahg = initialize_phase_one(&igz, &add_i, &ident);
+
+    let add_c_ahg = initialize_phase_one(&igz, &add_i, &w_i_plus_one);
+
+    (igz, mul_ahg, add_b_ahg, add_c_ahg)
+}
+
+// hg(x)
+pub fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
+    mul_ahg: &Vec<E>,
+    add_b_ahg: &Vec<E>,
+    add_c_ahg: &Vec<E>,
+    w_i_plus_one_poly: &MultilinearPoly<F, E>,
+) -> VPoly<F, E> {
+    let n_vars = w_i_plus_one_poly.num_vars();
+
+    VPoly::new(
+        vec![
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                mul_ahg
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                add_b_ahg
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                add_c_ahg
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            w_i_plus_one_poly.clone(),
+        ],
+        2,
+        n_vars,
+        Rc::new(|data: &[Fields<F, E>]| (data[3] * (data[0] + data[1])) + data[2]),
+    )
+}
+
+pub fn prepare_phase_one_params_with_alpha_beta_rb_rc<F: Field, E: ExtensionField<F>>(
+    rb: &Vec<E>,
+    rc: &Vec<E>,
+    alpha_n_beta: &[E],
+    add_i: &Vec<(usize, usize, usize)>,
+    mul_i: &Vec<(usize, usize, usize)>,
+    w_i_plus_one: &Vec<F>,
+) -> (Vec<E>, Vec<E>, Vec<E>, Vec<E>) {
+    let ident = vec![F::one(); w_i_plus_one.len()];
+
+    // get Igz for rb and rc
+    let alpha_rb_igz: Vec<E> = generate_eq(&rb)
+        .iter()
+        .map(|val| *val * alpha_n_beta[0])
+        .collect::<Vec<E>>();
+    let beta_rc_igz: Vec<E> = generate_eq(&rc)
+        .iter()
+        .map(|val| *val * alpha_n_beta[1])
+        .collect::<Vec<E>>();
+    let new_igz = alpha_rb_igz
+        .iter()
+        .zip(&beta_rc_igz)
+        .map(|(rhs, lhs)| *rhs + *lhs)
+        .collect::<Vec<E>>();
+
+    // Get new_addi_b for rb and rc
+    let new_addi_b_ahg: Vec<E> = initialize_phase_one(&new_igz, add_i, &ident);
+
+    let new_addi_c_ahg = initialize_phase_one(&new_igz, add_i, w_i_plus_one);
+
+    let new_mul_ahg = initialize_phase_one(&new_igz, mul_i, w_i_plus_one);
+
+    (new_igz, new_mul_ahg, new_addi_b_ahg, new_addi_c_ahg)
+}
+
+pub fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
+    igz: &Vec<E>,
+    u: &Vec<E>,
+    add_i: &Vec<(usize, usize, usize)>,
+    mul_i: &Vec<(usize, usize, usize)>,
+) -> (Vec<E>, Vec<E>) {
+    let iux = generate_eq(u);
+
+    // Build Af1 for mul and add
+    let mul_af1 = initialize_phase_two(&igz, &iux, &mul_i);
+
+    let add_af1 = initialize_phase_two(&igz, &iux, &add_i);
+
+    (mul_af1, add_af1)
+}
+
+pub fn build_phase_two_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
+    mul_af1: &Vec<E>,
+    add_af1: &Vec<E>,
+    wb: &E,
+    w_i_plus_one_poly: &MultilinearPoly<F, E>,
+) -> VPoly<F, E> {
+    let n_vars = w_i_plus_one_poly.num_vars();
+
+    VPoly::new(
+        vec![
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                mul_af1
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                add_af1
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(*val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            MultilinearPoly::new_from_vec(
+                n_vars,
+                vec![wb; w_i_plus_one_poly.evaluations.len()]
+                    .iter()
+                    .map(|val| Fields::<F, E>::Extension(**val))
+                    .collect::<Vec<Fields<F, E>>>(),
+            ),
+            w_i_plus_one_poly.clone(),
+        ],
+        2,
+        n_vars,
+        Rc::new(|data: &[Fields<F, E>]| {
+            (data[0] * data[2] * data[3]) + (data[1] * (data[2] + data[3]))
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -61,7 +231,8 @@ mod tests {
             .map(|val| BinomialExtensionField::<Mersenne31, 3>::from_base(Mersenne31::new(val)))
             .collect();
 
-        let precomputed = generate_eq(&challenges);
+        let precomputed =
+            generate_eq::<Mersenne31, BinomialExtensionField<Mersenne31, 3>>(&challenges);
 
         let expected: Vec<BinomialExtensionField<Mersenne31, 3>> = [
             Mersenne31::zero(),
@@ -95,7 +266,7 @@ mod tests {
         // a(1-b) = 3 (1-5) = -12
         // ab = 3*5 = 15
 
-        let igz = [
+        let igz: Vec<_> = [
             Mersenne31::from_canonical_usize(8),
             -Mersenne31::from_canonical_usize(10),
             -Mersenne31::from_canonical_usize(12),
@@ -119,7 +290,7 @@ mod tests {
             Mersenne31::from_canonical_usize(10),
         ];
 
-        let ahg = initialize_phase_one(igz, f1, f3);
+        let ahg = initialize_phase_one(&igz, &f1, &f3);
 
         let expected: Vec<_> = [
             Mersenne31::from_canonical_usize(32),
@@ -190,8 +361,9 @@ mod tests {
         // f(out, left, right) in the sparse form
         let f1 = vec![(0, 0, 1), (1, 2, 3), (2, 4, 5), (3, 6, 7)];
 
-        let af1 =
-            initialize_phase_two::<Mersenne31, BinomialExtensionField<Mersenne31, 3>>(igz, iux, f1);
+        let af1 = initialize_phase_two::<Mersenne31, BinomialExtensionField<Mersenne31, 3>>(
+            &igz, &iux, &f1,
+        );
 
         let expected: Vec<_> = [
             Mersenne31::from_canonical_usize(0),
