@@ -1,7 +1,7 @@
-use std::rc::Rc;
-
+use circuits::layered_circuit::utils::get_gate_properties;
 use p3_field::{ExtensionField, Field};
 use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
+use std::rc::Rc;
 use sum_check::primitives::SumCheckProof;
 
 pub fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E> {
@@ -215,6 +215,98 @@ pub fn build_phase_two_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
             (data[0] * data[2] * data[3]) + (data[1] * (data[2] + data[3]))
         }),
     )
+}
+
+pub struct SparsePoly<F: Field, E: ExtensionField<F>> {
+    // contains a vec of tuple of index and evaluation
+    pub n_vars: usize,
+    pub evals: Vec<(usize, Fields<F, E>)>,
+}
+
+impl<F: Field, E: ExtensionField<F>> SparsePoly<F, E> {
+    pub fn new(n_vars: usize, evals: Vec<(usize, Fields<F, E>)>) -> Self {
+        Self { n_vars, evals }
+    }
+
+    pub fn evaluate(&self, points: &[Fields<F, E>]) -> Fields<F, E> {
+        let basis = generate_eq(
+            &points
+                .iter()
+                .map(|val| val.to_extension_field())
+                .collect::<Vec<E>>(),
+        );
+
+        self.evals
+            .iter()
+            .fold(Fields::from_u32(0), |mut acc, (index, val)| {
+                acc = acc + (Fields::Extension(basis[*index]) * *val);
+                acc
+            })
+    }
+}
+
+pub fn to_sparse_poly<F: Field, E: ExtensionField<F>>(
+    gates: &[(usize, usize, usize)],
+    layer_index: usize,
+    n_vars: usize,
+) -> SparsePoly<F, E> {
+    // convert gate tuple to index and value pairs
+    let valid_gate_index_and_value = gates
+        .iter()
+        .map(|(a, b, c)| {
+            (
+                get_gate_properties(*a, *b, *c, layer_index),
+                Fields::from_u32(1),
+            )
+        })
+        .collect::<Vec<(usize, Fields<F, E>)>>();
+    SparsePoly::new(n_vars, valid_gate_index_and_value)
+}
+
+pub fn eval_layer_mle_given_wb_n_wc<F: Field, E: ExtensionField<F>>(
+    add_i: &[(usize, usize, usize)],
+    mul_i: &[(usize, usize, usize)],
+    challenges: &[Fields<F, E>],
+    wb: &Fields<F, E>,
+    wc: &Fields<F, E>,
+    layer_index: usize,
+    n_vars: usize,
+) -> Fields<F, E> {
+    let addi_poly = to_sparse_poly(add_i, layer_index, n_vars);
+    let muli_poly = to_sparse_poly(mul_i, layer_index, n_vars);
+
+    (addi_poly.evaluate(&challenges) * (*wb + *wc))
+        + (muli_poly.evaluate(&challenges) * (*wb * *wc))
+}
+
+pub fn eval_new_addi_n_muli_at_rb_bc_n_rc_bc<F: Field, E: ExtensionField<F>>(
+    add_i: &[(usize, usize, usize)],
+    mul_i: &[(usize, usize, usize)],
+    alpha_n_beta: &[Fields<F, E>],
+    rb: &[Fields<F, E>],
+    rc: &[Fields<F, E>],
+    bc: &[Fields<F, E>],
+    wb: &Fields<F, E>,
+    wc: &Fields<F, E>,
+    layer_index: usize,
+    n_vars: usize,
+) -> Fields<F, E> {
+    let addi_poly = to_sparse_poly(add_i, layer_index, n_vars);
+    let muli_poly = to_sparse_poly(mul_i, layer_index, n_vars);
+
+    let rb_bc = [rb, bc].concat();
+
+    let rc_bc = [rc, bc].concat();
+
+    let addi_rb_b_c = addi_poly.evaluate(&rb_bc);
+    let addi_rc_b_c = addi_poly.evaluate(&rc_bc);
+    let muli_rb_b_c = muli_poly.evaluate(&rb_bc);
+    let muli_rc_b_c = muli_poly.evaluate(&rc_bc);
+
+    let new_addi = (alpha_n_beta[0] * addi_rb_b_c) + (alpha_n_beta[1] * addi_rc_b_c);
+    let new_muli = (alpha_n_beta[0] * muli_rb_b_c) + (alpha_n_beta[1] * muli_rc_b_c);
+
+    (new_addi * (*wb + *wc)) + (new_muli * (*wb * *wc))
 }
 
 #[cfg(test)]
