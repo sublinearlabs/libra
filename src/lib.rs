@@ -122,6 +122,21 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                     &mut transcript,
                 );
 
+                transcript.observe_ext_element(&[wb]);
+                transcript.observe_ext_element(&[wc]);
+                transcript.observe_ext_element(&[sumcheck_proof.claimed_sum.to_extension_field()]);
+                transcript.observe_ext_element(&sumcheck_proof.round_polynomials.iter().fold(
+                    vec![],
+                    |mut acc, val| {
+                        acc.extend(
+                            val.iter()
+                                .map(|val| val.to_extension_field())
+                                .collect::<Vec<E>>(),
+                        );
+                        acc
+                    },
+                ));
+
                 sumcheck_proofs.push(sumcheck_proof);
                 wbs.push(wb);
                 wcs.push(wc);
@@ -164,6 +179,21 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                     &w_i_plus_one_poly,
                     &mut transcript,
                 );
+
+                transcript.observe_ext_element(&[wb]);
+                transcript.observe_ext_element(&[wc]);
+                transcript.observe_ext_element(&[sumcheck_proof.claimed_sum.to_extension_field()]);
+                transcript.observe_ext_element(&sumcheck_proof.round_polynomials.iter().fold(
+                    vec![],
+                    |mut acc, val| {
+                        acc.extend(
+                            val.iter()
+                                .map(|val| val.to_extension_field())
+                                .collect::<Vec<E>>(),
+                        );
+                        acc
+                    },
+                ));
 
                 sumcheck_proofs.push(sumcheck_proof);
                 wbs.push(wb);
@@ -234,6 +264,22 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
 
         let mut rc = rb_n_rc[(rb_n_rc.len() / 2)..].to_vec();
 
+        transcript.observe_ext_element(&[proofs.wbs[0]]);
+        transcript.observe_ext_element(&[proofs.wcs[0]]);
+        transcript
+            .observe_ext_element(&[proofs.sumcheck_proofs[0].claimed_sum.to_extension_field()]);
+        transcript.observe_ext_element(&proofs.sumcheck_proofs[0].round_polynomials.iter().fold(
+            vec![],
+            |mut acc, val| {
+                acc.extend(
+                    val.iter()
+                        .map(|val| val.to_extension_field())
+                        .collect::<Vec<E>>(),
+                );
+                acc
+            },
+        ));
+
         let expected_sum = eval_layer_mle_given_wb_n_wc(
             &add_i,
             &mul_i,
@@ -294,6 +340,24 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             assert_eq!(
                 sumcheck_claimed_sum,
                 expected_claimed_sum.to_extension_field()
+            );
+
+            transcript.observe_ext_element(&[proofs.wbs[i]]);
+            transcript.observe_ext_element(&[proofs.wcs[i]]);
+            transcript
+                .observe_ext_element(&[proofs.sumcheck_proofs[i].claimed_sum.to_extension_field()]);
+            transcript.observe_ext_element(
+                &proofs.sumcheck_proofs[i]
+                    .round_polynomials
+                    .iter()
+                    .fold(vec![], |mut acc, val| {
+                        acc.extend(
+                            val.iter()
+                                .map(|val| val.to_extension_field())
+                                .collect::<Vec<E>>(),
+                        );
+                        acc
+                    }),
             );
 
             alpha_n_beta = transcript
