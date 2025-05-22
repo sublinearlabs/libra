@@ -278,22 +278,6 @@ mod tests {
             .map(|(lhs, rhs)| *lhs + rhs)
             .collect::<Vec<E>>();
 
-        let wb_bln = MultilinearPoly::new_from_vec(
-            4,
-            vec![6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 16, 16, 16]
-                .into_iter()
-                .map(|val| Fields::<F, E>::Base(F::new(val)))
-                .collect(),
-        );
-
-        let wc_bln = MultilinearPoly::new_from_vec(
-            4,
-            vec![6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16]
-                .into_iter()
-                .map(|val| Fields::<F, E>::Base(F::new(val)))
-                .collect(),
-        );
-
         let new_addi_bln = MultilinearPoly::new_from_vec(
             4,
             comb_add
@@ -340,5 +324,37 @@ mod tests {
 
         let (claimed_sum, challenges) =
             SumCheck::<F, E, Mle>::verify_partial(&proof, &mut transcript);
+
+        let verifier_wb = &challenges[0..challenges.len() / 2];
+        let verifier_wc = &challenges[&challenges.len() / 2..];
+
+        assert_eq!(
+            rb,
+            verifier_wb
+                .iter()
+                .map(|val| val.to_extension_field())
+                .collect::<Vec<E>>()
+        );
+        assert_eq!(
+            rc,
+            verifier_wc
+                .iter()
+                .map(|val| val.to_extension_field())
+                .collect::<Vec<E>>()
+        );
+
+        let evaluated_wb = w_i_plus_one_poly.evaluate(&verifier_wb);
+        let evaluated_wc = w_i_plus_one_poly.evaluate(&verifier_wc);
+
+        assert_eq!(wb, evaluated_wb.to_extension_field());
+        assert_eq!(wc, evaluated_wc.to_extension_field());
+
+        let evaluated_add_i = new_addi_bln.evaluate(&challenges);
+        let evaluated_muli = new_muli_bln.evaluate(&challenges);
+
+        let expected_claimed_sum = (evaluated_add_i * (evaluated_wb + evaluated_wc))
+            + (evaluated_muli * (evaluated_wb * evaluated_wc));
+
+        assert_eq!(claimed_sum, expected_claimed_sum.to_extension_field());
     }
 }
