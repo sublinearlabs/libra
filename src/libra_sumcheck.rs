@@ -170,8 +170,8 @@ mod tests {
                 .collect::<Vec<E>>()
         );
 
-        let evaluated_wb = w_i_plus_one_poly.evaluate(&verifier_wb);
-        let evaluated_wc = w_i_plus_one_poly.evaluate(&verifier_wc);
+        let evaluated_wb = w_i_plus_one_poly.evaluate(verifier_wb);
+        let evaluated_wc = w_i_plus_one_poly.evaluate(verifier_wc);
 
         assert_eq!(wb, evaluated_wb.to_extension_field());
         assert_eq!(wc, evaluated_wc.to_extension_field());
@@ -343,8 +343,8 @@ mod tests {
                 .collect::<Vec<E>>()
         );
 
-        let evaluated_wb = w_i_plus_one_poly.evaluate(&verifier_wb);
-        let evaluated_wc = w_i_plus_one_poly.evaluate(&verifier_wc);
+        let evaluated_wb = w_i_plus_one_poly.evaluate(verifier_wb);
+        let evaluated_wc = w_i_plus_one_poly.evaluate(verifier_wc);
 
         assert_eq!(wb, evaluated_wb.to_extension_field());
         assert_eq!(wc, evaluated_wc.to_extension_field());
