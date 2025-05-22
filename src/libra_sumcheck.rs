@@ -9,12 +9,12 @@ use crate::utils::{
 };
 
 pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
-    igz: &Vec<E>,
-    mul_ahg: &Vec<E>,
-    add_b_ahg: &Vec<E>,
-    add_c_ahg: &Vec<E>,
-    add_i: &Vec<(usize, usize, usize)>,
-    mul_i: &Vec<(usize, usize, usize)>,
+    igz: &[E],
+    mul_ahg: &[E],
+    add_b_ahg: &[E],
+    add_c_ahg: &[E],
+    add_i: &[(usize, usize, usize)],
+    mul_i: &[(usize, usize, usize)],
     w_i_plus_one_poly: &MultilinearPoly<F, E>,
     transcript: &mut Transcript<F, E>,
 ) -> (SumCheckProof<F, E>, Vec<E>, Vec<E>, E, E) {
@@ -61,7 +61,6 @@ mod tests {
     use p3_field::{AbstractExtensionField, extension::BinomialExtensionField};
     use p3_mersenne_31::Mersenne31;
     use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
-    use std::rc::Rc;
     use sum_check::{SumCheck, interface::SumCheckInterface};
     use transcript::Transcript;
 
@@ -73,7 +72,7 @@ mod tests {
 
     type E = BinomialExtensionField<Mersenne31, 3>;
 
-    type MLE = VPoly<F, E>;
+    type Mle = VPoly<F, E>;
 
     #[test]
     fn test_prove_libra_sumcheck() {
@@ -204,7 +203,7 @@ mod tests {
         let mut transcript = Transcript::<F, E>::init();
 
         let (claimed_sum, challenges) =
-            SumCheck::<F, E, MLE>::verify_partial(&proof, &mut transcript);
+            SumCheck::<F, E, Mle>::verify_partial(&proof, &mut transcript);
     }
 
     #[test]
@@ -320,7 +319,7 @@ mod tests {
             4,
             comb_add
                 .into_iter()
-                .map(|val| Fields::<F, E>::Extension(val))
+                .map(Fields::<F, E>::Extension)
                 .collect(),
         );
 
@@ -328,7 +327,7 @@ mod tests {
             4,
             comb_mul
                 .into_iter()
-                .map(|val| Fields::<F, E>::Extension(val))
+                .map(Fields::<F, E>::Extension)
                 .collect(),
         );
 
@@ -361,6 +360,6 @@ mod tests {
         let mut transcript = Transcript::<F, E>::init();
 
         let (claimed_sum, challenges) =
-            SumCheck::<F, E, MLE>::verify_partial(&proof, &mut transcript);
+            SumCheck::<F, E, Mle>::verify_partial(&proof, &mut transcript);
     }
 }

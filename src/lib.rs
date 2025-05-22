@@ -17,15 +17,15 @@ use utils::{
 pub mod libra_sumcheck;
 pub mod utils;
 
-struct Libra<F: Field, E: ExtensionField<F>> {
+pub struct Libra<F: Field, E: ExtensionField<F>> {
     _marker: PhantomData<(F, E)>,
 }
 
-struct LibraProof<F: Field, E: ExtensionField<F>> {
-    circuit_output: Vec<F>,
-    sumcheck_proofs: Vec<SumCheckProof<F, E>>,
-    wbs: Vec<E>,
-    wcs: Vec<E>,
+pub struct LibraProof<F: Field, E: ExtensionField<F>> {
+    pub circuit_output: Vec<F>,
+    pub sumcheck_proofs: Vec<SumCheckProof<F, E>>,
+    pub wbs: Vec<E>,
+    pub wcs: Vec<E>,
 }
 
 impl<F: Field, E: ExtensionField<F>> LibraProof<F, E> {
@@ -45,7 +45,7 @@ impl<F: Field, E: ExtensionField<F>> LibraProof<F, E> {
 }
 
 impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
-    fn prove(circuit: &LayeredCircuit, output: Evaluation<F>) -> LibraProof<F, E> {
+    pub fn prove(circuit: &LayeredCircuit, output: Evaluation<F>) -> LibraProof<F, E> {
         let mut transcript = Transcript::init();
 
         let mut sumcheck_proofs = vec![];
@@ -210,7 +210,7 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
     }
 
     // Verify the GKR Proof
-    fn verify(
+    pub fn verify(
         circuit: &LayeredCircuit,
         proofs: LibraProof<F, E>,
         input: Vec<F>,
