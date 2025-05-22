@@ -123,59 +123,6 @@ mod tests {
 
         assert_eq!(mul_i_bln.evaluations, expected_mul_i);
 
-        let wb_bln = MultilinearPoly::new_from_vec(
-            4,
-            vec![6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 16, 16, 16]
-                .into_iter()
-                .map(|val| Fields::<F, E>::Base(F::new(val)))
-                .collect(),
-        );
-
-        let wc_bln = MultilinearPoly::new_from_vec(
-            4,
-            vec![6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16]
-                .into_iter()
-                .map(|val| Fields::Base(F::new(val)))
-                .collect(),
-        );
-
-        assert_eq!(
-            wc_bln.evaluate(&[
-                Fields::Base(F::new(0)),
-                Fields::Base(F::new(0)),
-                Fields::Base(F::new(0)),
-                Fields::Base(F::new(0))
-            ]),
-            Fields::Extension(E::from_base(Mersenne31::new(6)))
-        );
-        assert_eq!(
-            wc_bln.evaluate(&[
-                Fields::Base(F::new(0)),
-                Fields::Base(F::new(1)),
-                Fields::Base(F::new(0)),
-                Fields::Base(F::new(1))
-            ]),
-            Fields::Extension(E::from_base(Mersenne31::new(6)))
-        );
-        assert_eq!(
-            wc_bln.evaluate(&[
-                Fields::Base(F::new(1)),
-                Fields::Base(F::new(0)),
-                Fields::Base(F::new(1)),
-                Fields::Base(F::new(0))
-            ]),
-            Fields::Extension(E::from_base(F::new(6)))
-        );
-        assert_eq!(
-            wc_bln.evaluate(&[
-                Fields::Base(F::new(1)),
-                Fields::Base(F::new(1)),
-                Fields::Base(F::new(1)),
-                Fields::Base(F::new(1))
-            ]),
-            Fields::Extension(E::from_base(F::new(16)))
-        );
-
         let mut transcript = Transcript::<F, E>::init();
 
         let (igz, mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
@@ -204,6 +151,38 @@ mod tests {
 
         let (claimed_sum, challenges) =
             SumCheck::<F, E, Mle>::verify_partial(&proof, &mut transcript);
+
+        let verifier_wb = &challenges[0..challenges.len() / 2];
+        let verifier_wc = &challenges[&challenges.len() / 2..];
+
+        assert_eq!(
+            rb,
+            verifier_wb
+                .iter()
+                .map(|val| val.to_extension_field())
+                .collect::<Vec<E>>()
+        );
+        assert_eq!(
+            rc,
+            verifier_wc
+                .iter()
+                .map(|val| val.to_extension_field())
+                .collect::<Vec<E>>()
+        );
+
+        let evaluated_wb = w_i_plus_one_poly.evaluate(&verifier_wb);
+        let evaluated_wc = w_i_plus_one_poly.evaluate(&verifier_wc);
+
+        assert_eq!(wb, evaluated_wb.to_extension_field());
+        assert_eq!(wc, evaluated_wc.to_extension_field());
+
+        let evaluated_add_i = add_i_bln.evaluate(&challenges);
+        let evaluated_muli = mul_i_bln.evaluate(&challenges);
+
+        let expected_claimed_sum = (evaluated_add_i * (evaluated_wb + evaluated_wc))
+            + (evaluated_muli * (evaluated_wb * evaluated_wc));
+
+        assert_eq!(claimed_sum, expected_claimed_sum.to_extension_field());
     }
 
     #[test]
