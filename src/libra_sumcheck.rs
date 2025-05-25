@@ -1,31 +1,30 @@
 use p3_field::{ExtensionField, Field, PrimeField32};
-use poly::{Fields, MultilinearExtension, mle::MultilinearPoly};
+use poly::{Fields, MultilinearExtension};
 use sum_check::{SumCheck, interface::SumCheckInterface, primitives::SumCheckProof};
 use transcript::Transcript;
 
 use crate::utils::{
-    build_phase_one_libra_sumcheck_poly, build_phase_two_libra_sumcheck_poly,
+    ProveLibraInput, build_phase_one_libra_sumcheck_poly, build_phase_two_libra_sumcheck_poly,
     prepare_phase_two_params,
 };
 
-pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
-    igz: &[E],
-    mul_ahg: &[E],
-    add_b_ahg: &[E],
-    add_c_ahg: &[E],
-    add_i: &[(usize, usize, usize)],
-    mul_i: &[(usize, usize, usize)],
-    w_i_plus_one_poly: &MultilinearPoly<F, E>,
+pub fn prove_libra_sumcheck<'a, F: Field + PrimeField32, E: ExtensionField<F>>(
+    input: ProveLibraInput<'a, F, E>,
     transcript: &mut Transcript<F, E>,
 ) -> (SumCheckProof<F, E>, Vec<E>, Vec<E>, E, E) {
-    let phase_one_poly =
-        build_phase_one_libra_sumcheck_poly(mul_ahg, add_b_ahg, add_c_ahg, w_i_plus_one_poly);
+    let phase_one_poly = build_phase_one_libra_sumcheck_poly(
+        input.mul_ahg,
+        input.add_b_ahg,
+        input.add_c_ahg,
+        input.w_i_plus_one_poly,
+    );
 
     let claimed_sum = phase_one_poly.sum_over_hypercube();
 
     let (mut round_polys, u) = SumCheck::prove_partial(&phase_one_poly, transcript).unwrap();
 
-    let wb: E = w_i_plus_one_poly
+    let wb: E = input
+        .w_i_plus_one_poly
         .evaluate(
             &u.iter()
                 .map(|val| Fields::Extension(*val))
@@ -34,16 +33,17 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
         .to_extension_field();
 
     // Prepare parameters for phase two
-    let (mul_af1, add_af1) = prepare_phase_two_params(igz, &u, add_i, mul_i);
+    let (mul_af1, add_af1) = prepare_phase_two_params(input.igz, &u, input.add_i, input.mul_i);
 
     let phase_two_poly =
-        build_phase_two_libra_sumcheck_poly(&mul_af1, &add_af1, &wb, w_i_plus_one_poly);
+        build_phase_two_libra_sumcheck_poly(&mul_af1, &add_af1, &wb, input.w_i_plus_one_poly);
 
     let (phase_two_round_polys, v) = SumCheck::prove_partial(&phase_two_poly, transcript).unwrap();
 
     round_polys.extend(phase_two_round_polys);
 
-    let wc = w_i_plus_one_poly
+    let wc = input
+        .w_i_plus_one_poly
         .evaluate(
             &v.iter()
                 .map(|val| Fields::Extension(*val))
@@ -66,7 +66,9 @@ mod tests {
 
     use super::prove_libra_sumcheck;
 
-    use crate::utils::{prepare_phase_one_params, prepare_phase_one_params_with_alpha_beta_rb_rc};
+    use crate::utils::{
+        ProveLibraInput, prepare_phase_one_params, prepare_phase_one_params_with_alpha_beta_rb_rc,
+    };
 
     type F = Mersenne31;
 
@@ -137,13 +139,15 @@ mod tests {
         );
 
         let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
-            &igz,
-            &mul_ahg,
-            &add_b_ahg,
-            &add_c_ahg,
-            &add_i,
-            &mul_i,
-            &w_i_plus_one_poly,
+            ProveLibraInput {
+                igz: &igz,
+                mul_ahg: &mul_ahg,
+                add_b_ahg: &add_b_ahg,
+                add_c_ahg: &add_c_ahg,
+                add_i: &add_i,
+                mul_i: &mul_i,
+                w_i_plus_one_poly: &w_i_plus_one_poly,
+            },
             &mut transcript,
         );
 
@@ -310,13 +314,15 @@ mod tests {
         );
 
         let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
-            &igz,
-            &mul_ahg,
-            &add_b_ahg,
-            &add_c_ahg,
-            &add_i,
-            &mul_i,
-            &w_i_plus_one_poly,
+            ProveLibraInput {
+                igz: &igz,
+                mul_ahg: &mul_ahg,
+                add_b_ahg: &add_b_ahg,
+                add_c_ahg: &add_c_ahg,
+                add_i: &add_i,
+                mul_i: &mul_i,
+                w_i_plus_one_poly: &w_i_plus_one_poly,
+            },
             &mut transcript,
         );
 

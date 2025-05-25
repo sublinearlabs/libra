@@ -10,8 +10,8 @@ use poly::{Fields, MultilinearExtension, mle::MultilinearPoly};
 use sum_check::{SumCheck, interface::SumCheckInterface, primitives::SumCheckProof};
 use transcript::Transcript;
 use utils::{
-    eval_layer_mle_given_wb_n_wc, eval_new_addi_n_muli_at_rb_bc_n_rc_bc, prepare_phase_one_params,
-    prepare_phase_one_params_with_alpha_beta_rb_rc,
+    ProveLibraInput, eval_layer_mle_given_wb_n_wc, eval_new_addi_n_muli_at_rb_bc_n_rc_bc,
+    prepare_phase_one_params, prepare_phase_one_params_with_alpha_beta_rb_rc,
 };
 
 pub mod libra_sumcheck;
@@ -108,13 +108,15 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
 
         // Proves the sumcheck relation using Libra algorithms
         let (mut sumcheck_proof, mut rb, mut rc, mut wb, mut wc) = prove_libra_sumcheck(
-            &igz,
-            &mul_ahg,
-            &add_b_ahg,
-            &add_c_ahg,
-            &add_i,
-            &mul_i,
-            &w_i_plus_one_poly,
+            ProveLibraInput {
+                igz: &igz,
+                mul_ahg: &mul_ahg,
+                add_b_ahg: &add_b_ahg,
+                add_c_ahg: &add_c_ahg,
+                add_i: &add_i,
+                mul_i: &mul_i,
+                w_i_plus_one_poly: &w_i_plus_one_poly,
+            },
             &mut transcript,
         );
 
@@ -170,13 +172,15 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
 
             // Proves sumcheck relation using Libra algorithms
             (sumcheck_proof, rb, rc, wb, wc) = prove_libra_sumcheck(
-                &igz,
-                &mul_ahg,
-                &add_b_ahg,
-                &add_c_ahg,
-                &add_i,
-                &mul_i,
-                &w_i_plus_one_poly,
+                ProveLibraInput {
+                    igz: &igz,
+                    mul_ahg: &mul_ahg,
+                    add_b_ahg: &add_b_ahg,
+                    add_c_ahg: &add_c_ahg,
+                    add_i: &add_i,
+                    mul_i: &mul_i,
+                    w_i_plus_one_poly: &w_i_plus_one_poly,
+                },
                 &mut transcript,
             );
 

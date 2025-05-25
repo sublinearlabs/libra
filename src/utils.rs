@@ -4,6 +4,16 @@ use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
 use std::rc::Rc;
 use sum_check::primitives::SumCheckProof;
 
+pub struct ProveLibraInput<'a, F: Field, E: ExtensionField<F>> {
+    pub igz: &'a [E],
+    pub mul_ahg: &'a [E],
+    pub add_b_ahg: &'a [E],
+    pub add_c_ahg: &'a [E],
+    pub add_i: &'a [(usize, usize, usize)],
+    pub mul_i: &'a [(usize, usize, usize)],
+    pub w_i_plus_one_poly: &'a MultilinearPoly<F, E>,
+}
+
 pub(crate) fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E> {
     let mut res = vec![E::one()];
 
