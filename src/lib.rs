@@ -10,8 +10,9 @@ use poly::{Fields, MultilinearExtension, mle::MultilinearPoly};
 use sum_check::{SumCheck, interface::SumCheckInterface, primitives::SumCheckProof};
 use transcript::Transcript;
 use utils::{
-    ProveLibraInput, eval_layer_mle_given_wb_n_wc, eval_new_addi_n_muli_at_rb_bc_n_rc_bc,
-    prepare_phase_one_params, prepare_phase_one_params_with_alpha_beta_rb_rc,
+    EvalNewAddNMulInput, ProveLibraInput, eval_layer_mle_given_wb_n_wc,
+    eval_new_addi_n_muli_at_rb_bc_n_rc_bc, prepare_phase_one_params,
+    prepare_phase_one_params_with_alpha_beta_rb_rc,
 };
 
 pub mod libra_sumcheck;
@@ -349,14 +350,16 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
 
             // Calculates expected claimed sum given wb and wc values
             let expected_claimed_sum = eval_new_addi_n_muli_at_rb_bc_n_rc_bc(
-                &add_i,
-                &mul_i,
-                &alpha_n_beta,
-                &rb,
-                &rc,
-                &rb_n_rc,
-                &Fields::Extension(proofs.wbs[i]),
-                &Fields::Extension(proofs.wcs[i]),
+                EvalNewAddNMulInput {
+                    add_i: &add_i,
+                    mul_i: &mul_i,
+                    alpha_n_beta: &alpha_n_beta,
+                    rb: &rb,
+                    rc: &rc,
+                    bc: &rb_n_rc,
+                    wb: &Fields::Extension(proofs.wbs[i]),
+                    wc: &Fields::Extension(proofs.wcs[i]),
+                },
                 proofs.sumcheck_proofs.len() - i - 1,
                 n_vars,
             );
@@ -417,14 +420,16 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
 
         // Calculate expected claimed sum given wb and wc
         let expected_claimed_sum = eval_new_addi_n_muli_at_rb_bc_n_rc_bc(
-            &add_i,
-            &mul_i,
-            &alpha_n_beta,
-            &rb,
-            &rc,
-            &rb_n_rc,
-            &Fields::Extension(proofs.wbs[proofs.sumcheck_proofs.len() - 1]),
-            &Fields::Extension(proofs.wcs[proofs.sumcheck_proofs.len() - 1]),
+            EvalNewAddNMulInput {
+                add_i: &add_i,
+                mul_i: &mul_i,
+                alpha_n_beta: &alpha_n_beta,
+                rb: &rb,
+                rc: &rc,
+                bc: &rb_n_rc,
+                wb: &Fields::Extension(proofs.wbs[proofs.sumcheck_proofs.len() - 1]),
+                wc: &Fields::Extension(proofs.wcs[proofs.sumcheck_proofs.len() - 1]),
+            },
             proofs.sumcheck_proofs.len() - 1,
             n_vars,
         );
@@ -448,14 +453,16 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
 
         // Get the expected claimed sum
         let oracle_query = eval_new_addi_n_muli_at_rb_bc_n_rc_bc(
-            &add_i,
-            &mul_i,
-            &alpha_n_beta,
-            &rb,
-            &rc,
-            &rb_n_rc,
-            &wb,
-            &wc,
+            EvalNewAddNMulInput {
+                add_i: &add_i,
+                mul_i: &mul_i,
+                alpha_n_beta: &alpha_n_beta,
+                rb: &rb,
+                rc: &rc,
+                bc: &rb_n_rc,
+                wb: &wb,
+                wc: &wc,
+            },
             proofs.sumcheck_proofs.len() - 1,
             n_vars,
         );

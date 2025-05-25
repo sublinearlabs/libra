@@ -14,6 +14,17 @@ pub struct ProveLibraInput<'a, F: Field, E: ExtensionField<F>> {
     pub w_i_plus_one_poly: &'a MultilinearPoly<F, E>,
 }
 
+pub struct EvalNewAddNMulInput<'a, F: Field, E: ExtensionField<F>> {
+    pub add_i: &'a [(usize, usize, usize)],
+    pub mul_i: &'a [(usize, usize, usize)],
+    pub alpha_n_beta: &'a [Fields<F, E>],
+    pub rb: &'a [Fields<F, E>],
+    pub rc: &'a [Fields<F, E>],
+    pub bc: &'a [Fields<F, E>],
+    pub wb: &'a Fields<F, E>,
+    pub wc: &'a Fields<F, E>,
+}
+
 pub(crate) fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E> {
     let mut res = vec![E::one()];
 
@@ -289,33 +300,26 @@ pub(crate) fn eval_layer_mle_given_wb_n_wc<F: Field, E: ExtensionField<F>>(
 }
 
 pub(crate) fn eval_new_addi_n_muli_at_rb_bc_n_rc_bc<F: Field, E: ExtensionField<F>>(
-    add_i: &[(usize, usize, usize)],
-    mul_i: &[(usize, usize, usize)],
-    alpha_n_beta: &[Fields<F, E>],
-    rb: &[Fields<F, E>],
-    rc: &[Fields<F, E>],
-    bc: &[Fields<F, E>],
-    wb: &Fields<F, E>,
-    wc: &Fields<F, E>,
+    input: EvalNewAddNMulInput<'_, F, E>,
     layer_index: usize,
     n_vars: usize,
 ) -> Fields<F, E> {
-    let addi_poly = to_sparse_poly(add_i, layer_index, n_vars);
-    let muli_poly = to_sparse_poly(mul_i, layer_index, n_vars);
+    let addi_poly = to_sparse_poly(input.add_i, layer_index, n_vars);
+    let muli_poly = to_sparse_poly(input.mul_i, layer_index, n_vars);
 
-    let rb_bc = [rb, bc].concat();
+    let rb_bc = [input.rb, input.bc].concat();
 
-    let rc_bc = [rc, bc].concat();
+    let rc_bc = [input.rc, input.bc].concat();
 
     let addi_rb_b_c = addi_poly.evaluate(&rb_bc);
     let addi_rc_b_c = addi_poly.evaluate(&rc_bc);
     let muli_rb_b_c = muli_poly.evaluate(&rb_bc);
     let muli_rc_b_c = muli_poly.evaluate(&rc_bc);
 
-    let new_addi = (alpha_n_beta[0] * addi_rb_b_c) + (alpha_n_beta[1] * addi_rc_b_c);
-    let new_muli = (alpha_n_beta[0] * muli_rb_b_c) + (alpha_n_beta[1] * muli_rc_b_c);
+    let new_addi = (input.alpha_n_beta[0] * addi_rb_b_c) + (input.alpha_n_beta[1] * addi_rc_b_c);
+    let new_muli = (input.alpha_n_beta[0] * muli_rb_b_c) + (input.alpha_n_beta[1] * muli_rc_b_c);
 
-    (new_addi * (*wb + *wc)) + (new_muli * (*wb * *wc))
+    (new_addi * (*input.wb + *input.wc)) + (new_muli * (*input.wb * *input.wc))
 }
 
 #[cfg(test)]

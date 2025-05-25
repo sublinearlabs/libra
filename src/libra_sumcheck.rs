@@ -8,8 +8,8 @@ use crate::utils::{
     prepare_phase_two_params,
 };
 
-pub fn prove_libra_sumcheck<'a, F: Field + PrimeField32, E: ExtensionField<F>>(
-    input: ProveLibraInput<'a, F, E>,
+pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
+    input: ProveLibraInput<'_, F, E>,
     transcript: &mut Transcript<F, E>,
 ) -> (SumCheckProof<F, E>, Vec<E>, Vec<E>, E, E) {
     let phase_one_poly = build_phase_one_libra_sumcheck_poly(
