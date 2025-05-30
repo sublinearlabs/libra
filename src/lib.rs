@@ -57,18 +57,14 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
         let mut wcs = vec![];
 
         // Get the output vector
-        let output_evals: Vec<Fields<F, E>> = if output.layers[circuit.layers.len()].len() <= 1 {
-            [output.layers[circuit.layers.len()].clone(), vec![F::zero()]]
-                .concat()
-                .iter()
-                .map(|val| Fields::<F, E>::Base(*val))
-                .collect()
-        } else {
-            output.layers[circuit.layers.len()]
-                .iter()
-                .map(|val| Fields::<F, E>::Base(*val))
-                .collect()
-        };
+        let mut output_evals: Vec<Fields<F, E>> = output.layers[circuit.layers.len()]
+            .iter()
+            .map(|val| Fields::<F, E>::Base(*val))
+            .collect();
+
+        if output_evals.len() == 1 {
+            output_evals.push(Fields::Base(F::zero()));
+        }
 
         // Build the output polynomial
         let output_mle = MultilinearPoly::new_from_vec(
@@ -84,7 +80,7 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, circuit.layers.len() - 1);
 
         // Gets w_i+1
-        let w_i_plus_one_poly = MultilinearPoly::new_from_vec(
+        let mut w_i_plus_one_poly = MultilinearPoly::new_from_vec(
             (output.layers[circuit.layers.len() - 1].len() as f64).log2() as usize,
             output.layers[circuit.layers.len() - 1]
                 .iter()
@@ -107,9 +103,16 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                 .collect::<Vec<F>>(),
         );
 
+        let mut claimed_sum = output_mle.evaluate(
+            &g.iter()
+                .map(|val| Fields::Extension(*val))
+                .collect::<Vec<Fields<F, E>>>(),
+        );
+
         // Proves the sumcheck relation using Libra algorithms
         let (mut sumcheck_proof, mut rb, mut rc, mut wb, mut wc) = prove_libra_sumcheck(
             ProveLibraInput {
+                claimed_sum: &claimed_sum,
                 igz: &igz,
                 mul_ahg: &mul_ahg,
                 add_b_ahg: &add_b_ahg,
@@ -149,8 +152,21 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             // Get addi and muli
             let (add_i, mul_i) = LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, i - 1);
 
+            claimed_sum = (Fields::Extension(alpha_n_beta[0])
+                * w_i_plus_one_poly.evaluate(
+                    &rb.iter()
+                        .map(|val| Fields::Extension(*val))
+                        .collect::<Vec<Fields<F, E>>>(),
+                ))
+                + (Fields::Extension(alpha_n_beta[1])
+                    * w_i_plus_one_poly.evaluate(
+                        &rc.iter()
+                            .map(|val| Fields::Extension(*val))
+                            .collect::<Vec<Fields<F, E>>>(),
+                    ));
+
             // Gets w_i+1
-            let w_i_plus_one_poly = MultilinearPoly::new_from_vec(
+            w_i_plus_one_poly = MultilinearPoly::new_from_vec(
                 (output.layers[i - 1].len() as f64).log2() as usize,
                 output.layers[i - 1]
                     .iter()
@@ -174,6 +190,7 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             // Proves sumcheck relation using Libra algorithms
             (sumcheck_proof, rb, rc, wb, wc) = prove_libra_sumcheck(
                 ProveLibraInput {
+                    claimed_sum: &claimed_sum,
                     igz: &igz,
                     mul_ahg: &mul_ahg,
                     add_b_ahg: &add_b_ahg,
@@ -231,19 +248,15 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
         transcript.observe_base_element(&proofs.circuit_output);
 
         // Gets output vector
-        let output: Vec<Fields<F, E>> = if proofs.circuit_output.len() <= 1 {
-            [proofs.circuit_output, vec![F::zero()]]
-                .concat()
-                .iter()
-                .map(|val| Fields::<F, E>::Base(*val))
-                .collect()
-        } else {
-            proofs
-                .circuit_output
-                .iter()
-                .map(|val| Fields::<F, E>::Base(*val))
-                .collect()
-        };
+        let mut output: Vec<Fields<F, E>> = proofs
+            .circuit_output
+            .iter()
+            .map(|val| Fields::<F, E>::Base(*val))
+            .collect();
+
+        if output.len() == 1 {
+            output.push(Fields::Base(F::zero()));
+        }
 
         // Build output polynomial
         let output_mle =

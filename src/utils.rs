@@ -5,6 +5,7 @@ use std::rc::Rc;
 use sum_check::primitives::SumCheckProof;
 
 pub struct ProveLibraInput<'a, F: Field, E: ExtensionField<F>> {
+    pub claimed_sum: &'a Fields<F, E>,
     pub igz: &'a [E],
     pub mul_ahg: &'a [E],
     pub add_b_ahg: &'a [E],

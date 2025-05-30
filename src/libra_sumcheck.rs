@@ -19,8 +19,6 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
         input.w_i_plus_one_poly,
     );
 
-    let claimed_sum = phase_one_poly.sum_over_hypercube();
-
     let (mut round_polys, u) = SumCheck::prove_partial(&phase_one_poly, transcript).unwrap();
 
     let wb: E = input
@@ -51,13 +49,15 @@ pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
         )
         .to_extension_field();
 
-    let sumcheck_proof = SumCheckProof::new(claimed_sum, round_polys);
+    let sumcheck_proof = SumCheckProof::new(*input.claimed_sum, round_polys);
 
     (sumcheck_proof, u, v, wb, wc)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use p3_field::{AbstractExtensionField, extension::BinomialExtensionField};
     use p3_mersenne_31::Mersenne31;
     use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
@@ -138,8 +138,35 @@ mod tests {
                 .collect::<Vec<F>>(),
         );
 
+        let wb_bln = MultilinearPoly::new_from_vec(
+            4,
+            vec![6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 16, 16, 16]
+                .into_iter()
+                .map(|val| Fields::<F, E>::Base(F::new(val)))
+                .collect(),
+        );
+
+        let wc_bln = MultilinearPoly::new_from_vec(
+            4,
+            vec![6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16]
+                .into_iter()
+                .map(|val| Fields::Base(F::new(val)))
+                .collect(),
+        );
+
+        let claimed_sum = VPoly::new(
+            vec![add_i_bln.clone(), mul_i_bln.clone(), wb_bln, wc_bln],
+            2,
+            4,
+            Rc::new(|data: &[Fields<F, E>]| {
+                (data[0] * (data[2] + data[3])) + (data[1] * data[2] * data[3])
+            }),
+        )
+        .sum_over_hypercube();
+
         let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
             ProveLibraInput {
+                claimed_sum: &claimed_sum,
                 igz: &igz,
                 mul_ahg: &mul_ahg,
                 add_b_ahg: &add_b_ahg,
@@ -313,8 +340,35 @@ mod tests {
                 .collect::<Vec<F>>(),
         );
 
+        let wb_bln = MultilinearPoly::new_from_vec(
+            4,
+            vec![6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 16, 16, 16, 16]
+                .into_iter()
+                .map(|val| Fields::<F, E>::Base(F::new(val)))
+                .collect(),
+        );
+
+        let wc_bln = MultilinearPoly::new_from_vec(
+            4,
+            vec![6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16, 6, 6, 6, 16]
+                .into_iter()
+                .map(|val| Fields::Base(F::new(val)))
+                .collect(),
+        );
+
+        let claimed_sum = VPoly::new(
+            vec![new_addi_bln.clone(), new_muli_bln.clone(), wb_bln, wc_bln],
+            2,
+            4,
+            Rc::new(|data: &[Fields<F, E>]| {
+                (data[0] * (data[2] + data[3])) + (data[1] * data[2] * data[3])
+            }),
+        )
+        .sum_over_hypercube();
+
         let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
             ProveLibraInput {
+                claimed_sum: &claimed_sum,
                 igz: &igz,
                 mul_ahg: &mul_ahg,
                 add_b_ahg: &add_b_ahg,
