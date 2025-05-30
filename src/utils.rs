@@ -119,11 +119,11 @@ pub(crate) fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
     let ident = vec![F::one(); w_i_plus_one.len()];
 
     // Build Ahg for mul, add_b and add_c
-    let mul_ahg = initialize_phase_one(&igz, mul_i, w_i_plus_one);
+    let mul_ahg = initialize_phase_one(igz, mul_i, w_i_plus_one);
 
-    let add_b_ahg = initialize_phase_one(&igz, add_i, &ident);
+    let add_b_ahg = initialize_phase_one(igz, add_i, &ident);
 
-    let add_c_ahg = initialize_phase_one(&igz, add_i, w_i_plus_one);
+    let add_c_ahg = initialize_phase_one(igz, add_i, w_i_plus_one);
 
     (mul_ahg, add_b_ahg, add_c_ahg)
 }
@@ -246,8 +246,8 @@ impl<F: Field, E: ExtensionField<F>> SparsePoly<F, E> {
 
         self.evals
             .iter()
-            .fold(Fields::from_u32(0), |mut acc, (index, val)| {
-                acc = acc + (Fields::Extension(basis[*index]) * *val);
+            .fold(Fields::Extension(E::zero()), |mut acc, (index, val)| {
+                acc += Fields::Extension(basis[*index]) * *val;
                 acc
             })
     }
