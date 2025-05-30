@@ -41,6 +41,29 @@ pub(crate) fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E
     res
 }
 
+pub(crate) fn fold_igz<F: Field, E: ExtensionField<F>>(
+    rb: &[E],
+    rc: &[E],
+    alpha_n_beta: &[E],
+) -> Vec<E> {
+    // get Igz for rb and rc
+    let alpha_rb_igz: Vec<E> = generate_eq(rb)
+        .iter()
+        .map(|val| *val * alpha_n_beta[0])
+        .collect::<Vec<E>>();
+    let beta_rc_igz: Vec<E> = generate_eq(rc)
+        .iter()
+        .map(|val| *val * alpha_n_beta[1])
+        .collect::<Vec<E>>();
+
+    // Build and return new Igz
+    alpha_rb_igz
+        .iter()
+        .zip(&beta_rc_igz)
+        .map(|(rhs, lhs)| *rhs + *lhs)
+        .collect::<Vec<E>>()
+}
+
 // Algorithm 4
 pub(crate) fn initialize_phase_one<F: Field, E: ExtensionField<F>>(
     igz: &[E],
@@ -88,13 +111,11 @@ pub fn combine_sumcheck_proofs<F: Field, E: ExtensionField<F>>(
 }
 
 pub(crate) fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
-    g: &[E],
+    igz: &[E],
     add_i: &[(usize, usize, usize)],
     mul_i: &[(usize, usize, usize)],
     w_i_plus_one: &[F],
-) -> (Vec<E>, Vec<E>, Vec<E>, Vec<E>) {
-    let igz = generate_eq(g);
-
+) -> (Vec<E>, Vec<E>, Vec<E>) {
     let ident = vec![F::one(); w_i_plus_one.len()];
 
     // Build Ahg for mul, add_b and add_c
@@ -104,7 +125,7 @@ pub(crate) fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
 
     let add_c_ahg = initialize_phase_one(&igz, add_i, w_i_plus_one);
 
-    (igz, mul_ahg, add_b_ahg, add_c_ahg)
+    (mul_ahg, add_b_ahg, add_c_ahg)
 }
 
 // hg(x)
@@ -145,41 +166,6 @@ pub(crate) fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>
         n_vars,
         Rc::new(|data: &[Fields<F, E>]| (data[3] * (data[0] + data[1])) + data[2]),
     )
-}
-
-pub(crate) fn prepare_phase_one_params_with_alpha_beta_rb_rc<F: Field, E: ExtensionField<F>>(
-    rb: &[E],
-    rc: &[E],
-    alpha_n_beta: &[E],
-    add_i: &[(usize, usize, usize)],
-    mul_i: &[(usize, usize, usize)],
-    w_i_plus_one: &[F],
-) -> (Vec<E>, Vec<E>, Vec<E>, Vec<E>) {
-    let ident = vec![F::one(); w_i_plus_one.len()];
-
-    // get Igz for rb and rc
-    let alpha_rb_igz: Vec<E> = generate_eq(rb)
-        .iter()
-        .map(|val| *val * alpha_n_beta[0])
-        .collect::<Vec<E>>();
-    let beta_rc_igz: Vec<E> = generate_eq(rc)
-        .iter()
-        .map(|val| *val * alpha_n_beta[1])
-        .collect::<Vec<E>>();
-    let new_igz = alpha_rb_igz
-        .iter()
-        .zip(&beta_rc_igz)
-        .map(|(rhs, lhs)| *rhs + *lhs)
-        .collect::<Vec<E>>();
-
-    // Get new_addi_b for rb and rc
-    let new_addi_b_ahg: Vec<E> = initialize_phase_one(&new_igz, add_i, &ident);
-
-    let new_addi_c_ahg = initialize_phase_one(&new_igz, add_i, w_i_plus_one);
-
-    let new_mul_ahg = initialize_phase_one(&new_igz, mul_i, w_i_plus_one);
-
-    (new_igz, new_mul_ahg, new_addi_b_ahg, new_addi_c_ahg)
 }
 
 pub(crate) fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(

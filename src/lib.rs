@@ -11,8 +11,7 @@ use sum_check::{SumCheck, interface::SumCheckInterface, primitives::SumCheckProo
 use transcript::Transcript;
 use utils::{
     EvalNewAddNMulInput, ProveLibraInput, eval_layer_mle_given_wb_n_wc,
-    eval_new_addi_n_muli_at_rb_bc_n_rc_bc, prepare_phase_one_params,
-    prepare_phase_one_params_with_alpha_beta_rb_rc,
+    eval_new_addi_n_muli_at_rb_bc_n_rc_bc, fold_igz, generate_eq, prepare_phase_one_params,
 };
 
 pub mod libra_sumcheck;
@@ -91,9 +90,11 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
         // Sample random challenge for the first round
         let g = transcript.sample_n_challenges(output_mle.num_vars());
 
+        let mut igz = generate_eq(&g);
+
         // Prepares parameters for phase one of Libra
-        let (mut igz, mut mul_ahg, mut add_b_ahg, mut add_c_ahg) = prepare_phase_one_params(
-            &g,
+        let (mut mul_ahg, mut add_b_ahg, mut add_c_ahg) = prepare_phase_one_params(
+            &igz,
             &add_i,
             &mul_i,
             &w_i_plus_one_poly
@@ -173,11 +174,13 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                     .map(|val| Fields::<F, E>::Base(*val))
                     .collect(),
             );
+
+            // Fold Igz for rb and rc using alpha and beta
+            igz = fold_igz(&rb, &rc, &alpha_n_beta);
+
             // Gets new addi and muli based on rb, rc, alpha and beta
-            (igz, mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params_with_alpha_beta_rb_rc(
-                &rb,
-                &rc,
-                &alpha_n_beta,
+            (mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
+                &igz,
                 &add_i,
                 &mul_i,
                 &w_i_plus_one_poly
