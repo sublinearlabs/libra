@@ -26,7 +26,7 @@ pub struct EvalNewAddNMulInput<'a, F: Field, E: ExtensionField<F>> {
     pub wc: &'a Fields<F, E>,
 }
 
-pub(crate) fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E> {
+pub fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E> {
     let mut res = vec![E::one()];
 
     for point in points {
@@ -41,11 +41,7 @@ pub(crate) fn generate_eq<F: Field, E: ExtensionField<F>>(points: &[E]) -> Vec<E
     res
 }
 
-pub(crate) fn fold_igz<F: Field, E: ExtensionField<F>>(
-    rb: &[E],
-    rc: &[E],
-    alpha_n_beta: &[E],
-) -> Vec<E> {
+pub fn fold_igz<F: Field, E: ExtensionField<F>>(rb: &[E], rc: &[E], alpha_n_beta: &[E]) -> Vec<E> {
     // get Igz for rb and rc
     let alpha_rb_igz: Vec<E> = generate_eq(rb)
         .iter()
@@ -65,7 +61,7 @@ pub(crate) fn fold_igz<F: Field, E: ExtensionField<F>>(
 }
 
 // Algorithm 4
-pub(crate) fn initialize_phase_one<F: Field, E: ExtensionField<F>>(
+pub fn initialize_phase_one<F: Field, E: ExtensionField<F>>(
     igz: &[E],
     f1: &[(usize, usize, usize)],
     f3: &[F],
@@ -81,7 +77,7 @@ pub(crate) fn initialize_phase_one<F: Field, E: ExtensionField<F>>(
 }
 
 // Algorithm 5
-pub(crate) fn initialize_phase_two<F: Field, E: ExtensionField<F>>(
+pub fn initialize_phase_two<F: Field, E: ExtensionField<F>>(
     igz: &[E],
     iux: &[E],
     f1: &[(usize, usize, usize)],
@@ -110,7 +106,7 @@ pub fn combine_sumcheck_proofs<F: Field, E: ExtensionField<F>>(
         .unwrap()
 }
 
-pub(crate) fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
+pub fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
     igz: &[E],
     add_i: &[(usize, usize, usize)],
     mul_i: &[(usize, usize, usize)],
@@ -129,7 +125,7 @@ pub(crate) fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
 }
 
 // hg(x)
-pub(crate) fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
+pub fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
     mul_ahg: &[E],
     add_b_ahg: &[E],
     add_c_ahg: &[E],
@@ -168,7 +164,7 @@ pub(crate) fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>
     )
 }
 
-pub(crate) fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
+pub fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
     igz: &[E],
     u: &[E],
     add_i: &[(usize, usize, usize)],
@@ -184,7 +180,7 @@ pub(crate) fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
     (mul_af1, add_af1)
 }
 
-pub(crate) fn build_phase_two_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
+pub fn build_phase_two_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
     mul_af1: &[E],
     add_af1: &[E],
     wb: &E,
@@ -271,7 +267,7 @@ pub fn to_sparse_poly<F: Field, E: ExtensionField<F>>(
     SparsePoly::new(n_vars, valid_gate_index_and_value)
 }
 
-pub(crate) fn eval_layer_mle_given_wb_n_wc<F: Field, E: ExtensionField<F>>(
+pub fn eval_layer_mle_given_wb_n_wc<F: Field, E: ExtensionField<F>>(
     add_i: &[(usize, usize, usize)],
     mul_i: &[(usize, usize, usize)],
     challenges: &[Fields<F, E>],
@@ -286,7 +282,7 @@ pub(crate) fn eval_layer_mle_given_wb_n_wc<F: Field, E: ExtensionField<F>>(
     (addi_poly.evaluate(challenges) * (*wb + *wc)) + (muli_poly.evaluate(challenges) * (*wb * *wc))
 }
 
-pub(crate) fn eval_new_addi_n_muli_at_rb_bc_n_rc_bc<F: Field, E: ExtensionField<F>>(
+pub fn eval_new_addi_n_muli_at_rb_bc_n_rc_bc<F: Field, E: ExtensionField<F>>(
     input: EvalNewAddNMulInput<'_, F, E>,
     layer_index: usize,
     n_vars: usize,
