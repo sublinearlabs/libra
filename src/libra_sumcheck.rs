@@ -66,7 +66,7 @@ mod tests {
 
     use super::prove_libra_sumcheck;
 
-    use crate::utils::{ProveLibraInput, fold_igz, generate_eq, prepare_phase_one_params};
+    use crate::utils::{ProveLibraInput, generate_eq, igz_n_to_1_fold, prepare_phase_one_params};
 
     type F = Mersenne31;
 
@@ -327,7 +327,7 @@ mod tests {
 
         let mut transcript = Transcript::<F, E>::init();
 
-        let igz = fold_igz::<F, E>(&rb, &rc, &alpha_n_beta);
+        let igz = igz_n_to_1_fold::<F, E>(&[&rb, &rc], &alpha_n_beta);
 
         let (mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
             &igz,

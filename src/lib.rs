@@ -11,7 +11,7 @@ use sum_check::{SumCheck, interface::SumCheckInterface, primitives::SumCheckProo
 use transcript::Transcript;
 use utils::{
     EvalNewAddNMulInput, ProveLibraInput, eval_layer_mle_given_wb_n_wc,
-    eval_new_addi_n_muli_at_rb_bc_n_rc_bc, fold_igz, generate_eq, prepare_phase_one_params,
+    eval_new_addi_n_muli_at_rb_bc_n_rc_bc, generate_eq, igz_n_to_1_fold, prepare_phase_one_params,
 };
 
 pub mod libra_sumcheck;
@@ -176,7 +176,7 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             );
 
             // Fold Igz for rb and rc using alpha and beta
-            igz = fold_igz(&rb, &rc, &alpha_n_beta);
+            igz = igz_n_to_1_fold(&[&rb, &rc], &alpha_n_beta);
 
             // Gets new addi and muli based on rb, rc, alpha and beta
             (mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
