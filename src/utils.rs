@@ -4,6 +4,9 @@ use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, vpoly::VPoly};
 use std::rc::Rc;
 use sum_check::primitives::SumCheckProof;
 
+type PhaseOneParams<F, E> = (Vec<Fields<F, E>>, Vec<Fields<F, E>>, Vec<Fields<F, E>>);
+type PhaseTwoParams<F, E> = (Vec<Fields<F, E>>, Vec<Fields<F, E>>);
+
 pub struct ProveLibraInput<'a, F: Field, E: ExtensionField<F>> {
     pub claimed_sum: &'a Fields<F, E>,
     pub igz: &'a [Fields<F, E>],
@@ -115,7 +118,7 @@ pub fn prepare_phase_one_params<F: Field, E: ExtensionField<F>>(
     add_i: &[(usize, usize, usize)],
     mul_i: &[(usize, usize, usize)],
     w_i_plus_one: &[Fields<F, E>],
-) -> (Vec<Fields<F, E>>, Vec<Fields<F, E>>, Vec<Fields<F, E>>) {
+) -> PhaseOneParams<F, E> {
     let ident = vec![Fields::Extension(E::one()); w_i_plus_one.len()];
 
     // Build Ahg for mul, add_b and add_c
@@ -155,7 +158,7 @@ pub fn prepare_phase_two_params<F: Field, E: ExtensionField<F>>(
     u: &[Fields<F, E>],
     add_i: &[(usize, usize, usize)],
     mul_i: &[(usize, usize, usize)],
-) -> (Vec<Fields<F, E>>, Vec<Fields<F, E>>) {
+) -> PhaseTwoParams<F, E> {
     let iux = generate_eq(u);
 
     // Build Af1 for mul and add
