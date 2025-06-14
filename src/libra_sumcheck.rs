@@ -11,47 +11,41 @@ use crate::utils::{
 pub fn prove_libra_sumcheck<F: Field + PrimeField32, E: ExtensionField<F>>(
     input: ProveLibraInput<'_, F, E>,
     transcript: &mut Transcript<F, E>,
-) -> (SumCheckProof<F, E>, Vec<E>, Vec<E>, E, E) {
-    let phase_one_poly = build_phase_one_libra_sumcheck_poly(
+) -> (SumCheckProof<F, E>, Fields<F, E>, Fields<F, E>) {
+    let mut phase_one_poly = build_phase_one_libra_sumcheck_poly(
         input.mul_ahg,
         input.add_b_ahg,
         input.add_c_ahg,
         input.w_i_plus_one_poly,
     );
 
-    let (mut round_polys, u) = SumCheck::prove_partial(&phase_one_poly, transcript).unwrap();
+    let mut phase_1_proof =
+        SumCheck::prove_partial(*input.claimed_sum, &mut phase_one_poly, transcript).unwrap();
 
-    let wb: E = input
-        .w_i_plus_one_poly
-        .evaluate(
-            &u.iter()
-                .map(|val| Fields::Extension(*val))
-                .collect::<Vec<Fields<F, E>>>(),
-        )
-        .to_extension_field();
+    let wb: Fields<F, E> = input.w_i_plus_one_poly.evaluate(&phase_1_proof.challenges);
 
     // Prepare parameters for phase two
-    let (mul_af1, add_af1) = prepare_phase_two_params(input.igz, &u, input.add_i, input.mul_i);
+    let (mul_af1, add_af1) = prepare_phase_two_params(
+        input.igz,
+        &phase_1_proof.challenges,
+        input.add_i,
+        input.mul_i,
+    );
 
-    let phase_two_poly =
+    let mut phase_two_poly =
         build_phase_two_libra_sumcheck_poly(&mul_af1, &add_af1, &wb, input.w_i_plus_one_poly);
 
-    let (phase_two_round_polys, v) = SumCheck::prove_partial(&phase_two_poly, transcript).unwrap();
+    let phase_2_proof =
+        SumCheck::prove_partial(*input.claimed_sum, &mut phase_two_poly, transcript).unwrap();
 
-    round_polys.extend(phase_two_round_polys);
+    let wc = input.w_i_plus_one_poly.evaluate(&phase_2_proof.challenges);
 
-    let wc = input
-        .w_i_plus_one_poly
-        .evaluate(
-            &v.iter()
-                .map(|val| Fields::Extension(*val))
-                .collect::<Vec<Fields<F, E>>>(),
-        )
-        .to_extension_field();
+    phase_1_proof
+        .round_polynomials
+        .extend(phase_2_proof.round_polynomials);
+    phase_1_proof.challenges.extend(phase_2_proof.challenges);
 
-    let sumcheck_proof = SumCheckProof::new(*input.claimed_sum, round_polys);
-
-    (sumcheck_proof, u, v, wb, wc)
+    (phase_1_proof, wb, wc)
 }
 
 #[cfg(test)]
@@ -76,19 +70,14 @@ mod tests {
 
     #[test]
     fn test_prove_libra_sumcheck() {
-        let g = vec![E::from_base(F::new(3))];
+        let g = Fields::from_u32_vec(vec![3]);
 
         let add_i = vec![(0, 0, 1)];
 
         let mul_i = vec![(1, 2, 3)];
 
-        let w_i_plus_one_poly = MultilinearPoly::new_from_vec(
-            2,
-            vec![6, 6, 6, 16]
-                .into_iter()
-                .map(|val| Fields::Base(F::new(val)))
-                .collect(),
-        );
+        let w_i_plus_one_poly =
+            MultilinearPoly::new_from_vec(2, Fields::from_u32_vec(vec![6, 6, 6, 16]));
 
         // Traditional poly
         let mut add_i_eval = vec![0; 32];
@@ -125,18 +114,10 @@ mod tests {
 
         let mut transcript = Transcript::<F, E>::init();
 
-        let igz = generate_eq::<F, E>(&g);
+        let igz = generate_eq(&g);
 
-        let (mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
-            &igz,
-            &add_i,
-            &mul_i,
-            &w_i_plus_one_poly
-                .evaluations
-                .iter()
-                .map(|val| val.to_base_field().unwrap())
-                .collect::<Vec<F>>(),
-        );
+        let (mul_ahg, add_b_ahg, add_c_ahg) =
+            prepare_phase_one_params(&igz, &add_i, &mul_i, &w_i_plus_one_poly.evaluations);
 
         let wb_bln = MultilinearPoly::new_from_vec(
             4,
@@ -164,7 +145,7 @@ mod tests {
         )
         .sum_over_hypercube();
 
-        let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
+        let (proof, wb, wc) = prove_libra_sumcheck(
             ProveLibraInput {
                 claimed_sum: &claimed_sum,
                 igz: &igz,
@@ -186,26 +167,18 @@ mod tests {
         let verifier_wb = &challenges[0..challenges.len() / 2];
         let verifier_wc = &challenges[&challenges.len() / 2..];
 
-        assert_eq!(
-            rb,
-            verifier_wb
-                .iter()
-                .map(|val| val.to_extension_field())
-                .collect::<Vec<E>>()
+        let (rb, rc) = (
+            proof.challenges[..proof.challenges.len() / 2].to_vec(),
+            proof.challenges[proof.challenges.len() / 2..].to_vec(),
         );
-        assert_eq!(
-            rc,
-            verifier_wc
-                .iter()
-                .map(|val| val.to_extension_field())
-                .collect::<Vec<E>>()
-        );
+        assert_eq!(rb, verifier_wb);
+        assert_eq!(rc, verifier_wc);
 
         let evaluated_wb = w_i_plus_one_poly.evaluate(verifier_wb);
         let evaluated_wc = w_i_plus_one_poly.evaluate(verifier_wc);
 
-        assert_eq!(wb, evaluated_wb.to_extension_field());
-        assert_eq!(wc, evaluated_wc.to_extension_field());
+        assert_eq!(wb, evaluated_wb);
+        assert_eq!(wc, evaluated_wc);
 
         let evaluated_add_i = add_i_bln.evaluate(&challenges);
         let evaluated_muli = mul_i_bln.evaluate(&challenges);
@@ -218,21 +191,16 @@ mod tests {
 
     #[test]
     fn test_prove_alpha_beta_folding() {
-        let rb = vec![E::from_base(F::new(2))];
-        let rc = vec![E::from_base(F::new(4))];
-        let alpha_n_beta = vec![E::from_base(F::new(3)), E::from_base(F::new(5))];
+        let rb = Fields::from_u32_vec(vec![2]);
+        let rc = Fields::from_u32_vec(vec![4]);
+        let alpha_n_beta = Fields::from_u32_vec(vec![3, 5]);
 
         let add_i = vec![(0, 0, 1)];
 
         let mul_i = vec![(1, 2, 3)];
 
-        let w_i_plus_one_poly = MultilinearPoly::new_from_vec(
-            2,
-            vec![6, 6, 6, 16]
-                .into_iter()
-                .map(|val| Fields::Base(F::new(val)))
-                .collect(),
-        );
+        let w_i_plus_one_poly =
+            MultilinearPoly::new_from_vec(2, Fields::from_u32_vec(vec![6, 6, 6, 16]));
 
         // Traditional poly
         let mut add_i_eval = vec![0; 32];
@@ -247,30 +215,22 @@ mod tests {
         );
 
         let add_rb_alpha = add_i_poly
-            .partial_evaluate(
-                &rb.iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            )
+            .partial_evaluate(&rb)
             .evaluations
             .iter()
-            .map(|val| val.to_extension_field() * alpha_n_beta[0])
-            .collect::<Vec<E>>();
+            .map(|val| *val * alpha_n_beta[0])
+            .collect::<Vec<Fields<F, E>>>();
         let add_rc_beta = add_i_poly
-            .partial_evaluate(
-                &rc.iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            )
+            .partial_evaluate(&rc)
             .evaluations
             .iter()
-            .map(|val| val.to_extension_field() * alpha_n_beta[1])
-            .collect::<Vec<E>>();
+            .map(|val| *val * alpha_n_beta[1])
+            .collect::<Vec<Fields<F, E>>>();
         let comb_add = add_rb_alpha
             .iter()
             .zip(add_rc_beta)
             .map(|(lhs, rhs)| *lhs + rhs)
-            .collect::<Vec<E>>();
+            .collect::<Vec<Fields<F, E>>>();
 
         let mut mul_i_eval = vec![0; 32];
         mul_i_eval[27] = 1;
@@ -284,61 +244,33 @@ mod tests {
         );
 
         let mul_rb_alpha = mul_i_poly
-            .partial_evaluate(
-                &rb.iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            )
+            .partial_evaluate(&rb)
             .evaluations
             .iter()
-            .map(|val| val.to_extension_field() * alpha_n_beta[0])
-            .collect::<Vec<E>>();
+            .map(|val| *val * alpha_n_beta[0])
+            .collect::<Vec<Fields<F, E>>>();
         let mul_rc_beta = mul_i_poly
-            .partial_evaluate(
-                &rc.iter()
-                    .map(|val| Fields::<F, E>::Extension(*val))
-                    .collect::<Vec<Fields<F, E>>>(),
-            )
+            .partial_evaluate(&rc)
             .evaluations
             .iter()
-            .map(|val| val.to_extension_field() * alpha_n_beta[1])
-            .collect::<Vec<E>>();
+            .map(|val| *val * alpha_n_beta[1])
+            .collect::<Vec<Fields<F, E>>>();
         let comb_mul = mul_rb_alpha
             .iter()
             .zip(mul_rc_beta)
             .map(|(lhs, rhs)| *lhs + rhs)
-            .collect::<Vec<E>>();
+            .collect::<Vec<Fields<F, E>>>();
 
-        let new_addi_bln = MultilinearPoly::new_from_vec(
-            4,
-            comb_add
-                .into_iter()
-                .map(Fields::<F, E>::Extension)
-                .collect(),
-        );
+        let new_addi_bln = MultilinearPoly::new_from_vec(4, comb_add);
 
-        let new_muli_bln = MultilinearPoly::new_from_vec(
-            4,
-            comb_mul
-                .into_iter()
-                .map(Fields::<F, E>::Extension)
-                .collect(),
-        );
+        let new_muli_bln = MultilinearPoly::new_from_vec(4, comb_mul);
 
         let mut transcript = Transcript::<F, E>::init();
 
         let igz = igz_n_to_1_fold::<F, E>(&[&rb, &rc], &alpha_n_beta);
 
-        let (mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
-            &igz,
-            &add_i,
-            &mul_i,
-            &w_i_plus_one_poly
-                .evaluations
-                .iter()
-                .map(|val| val.to_base_field().unwrap())
-                .collect::<Vec<F>>(),
-        );
+        let (mul_ahg, add_b_ahg, add_c_ahg) =
+            prepare_phase_one_params(&igz, &add_i, &mul_i, &w_i_plus_one_poly.evaluations);
 
         let wb_bln = MultilinearPoly::new_from_vec(
             4,
@@ -366,7 +298,7 @@ mod tests {
         )
         .sum_over_hypercube();
 
-        let (proof, rb, rc, wb, wc) = prove_libra_sumcheck(
+        let (proof, wb, wc) = prove_libra_sumcheck(
             ProveLibraInput {
                 claimed_sum: &claimed_sum,
                 igz: &igz,
@@ -388,26 +320,19 @@ mod tests {
         let verifier_wb = &challenges[0..challenges.len() / 2];
         let verifier_wc = &challenges[&challenges.len() / 2..];
 
-        assert_eq!(
-            rb,
-            verifier_wb
-                .iter()
-                .map(|val| val.to_extension_field())
-                .collect::<Vec<E>>()
+        let (rb, rc) = (
+            proof.challenges[..proof.challenges.len() / 2].to_vec(),
+            proof.challenges[proof.challenges.len() / 2..].to_vec(),
         );
-        assert_eq!(
-            rc,
-            verifier_wc
-                .iter()
-                .map(|val| val.to_extension_field())
-                .collect::<Vec<E>>()
-        );
+
+        assert_eq!(rb, verifier_wb);
+        assert_eq!(rc, verifier_wc);
 
         let evaluated_wb = w_i_plus_one_poly.evaluate(verifier_wb);
         let evaluated_wc = w_i_plus_one_poly.evaluate(verifier_wc);
 
-        assert_eq!(wb, evaluated_wb.to_extension_field());
-        assert_eq!(wc, evaluated_wc.to_extension_field());
+        assert_eq!(wb, evaluated_wb);
+        assert_eq!(wc, evaluated_wc);
 
         let evaluated_add_i = new_addi_bln.evaluate(&challenges);
         let evaluated_muli = new_muli_bln.evaluate(&challenges);

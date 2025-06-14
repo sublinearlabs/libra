@@ -22,18 +22,18 @@ pub struct Libra<F: Field, E: ExtensionField<F>> {
 }
 
 pub struct LibraProof<F: Field, E: ExtensionField<F>> {
-    pub circuit_output: Vec<F>,
+    pub circuit_output: Vec<Fields<F, E>>,
     pub sumcheck_proofs: Vec<SumCheckProof<F, E>>,
-    pub wbs: Vec<E>,
-    pub wcs: Vec<E>,
+    pub wbs: Vec<Fields<F, E>>,
+    pub wcs: Vec<Fields<F, E>>,
 }
 
 impl<F: Field, E: ExtensionField<F>> LibraProof<F, E> {
     pub fn new(
-        output: Vec<F>,
+        output: Vec<Fields<F, E>>,
         sumcheck_proofs: Vec<SumCheckProof<F, E>>,
-        wbs: Vec<E>,
-        wcs: Vec<E>,
+        wbs: Vec<Fields<F, E>>,
+        wcs: Vec<Fields<F, E>>,
     ) -> LibraProof<F, E> {
         LibraProof {
             circuit_output: output,
@@ -47,7 +47,7 @@ impl<F: Field, E: ExtensionField<F>> LibraProof<F, E> {
 impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
     pub fn prove(circuit: &LayeredCircuit, output: Evaluation<F>) -> LibraProof<F, E> {
         // Initialize prover transcript
-        let mut transcript = Transcript::init();
+        let mut transcript = Transcript::<F, E>::init();
 
         let mut sumcheck_proofs = vec![];
 
@@ -88,30 +88,22 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
         );
 
         // Sample random challenge for the first round
-        let g = transcript.sample_n_challenges(output_mle.num_vars());
+        let g = transcript
+            .sample_n_challenges(output_mle.num_vars())
+            .iter()
+            .map(|val| Fields::Extension(*val))
+            .collect::<Vec<Fields<F, E>>>();
 
         let mut igz = generate_eq(&g);
 
         // Prepares parameters for phase one of Libra
-        let (mut mul_ahg, mut add_b_ahg, mut add_c_ahg) = prepare_phase_one_params(
-            &igz,
-            &add_i,
-            &mul_i,
-            &w_i_plus_one_poly
-                .evaluations
-                .iter()
-                .map(|val| val.to_base_field().unwrap())
-                .collect::<Vec<F>>(),
-        );
+        let (mut mul_ahg, mut add_b_ahg, mut add_c_ahg) =
+            prepare_phase_one_params(&igz, &add_i, &mul_i, &w_i_plus_one_poly.evaluations);
 
-        let mut claimed_sum = output_mle.evaluate(
-            &g.iter()
-                .map(|val| Fields::Extension(*val))
-                .collect::<Vec<Fields<F, E>>>(),
-        );
+        let mut claimed_sum = output_mle.evaluate(&g);
 
         // Proves the sumcheck relation using Libra algorithms
-        let (mut sumcheck_proof, mut rb, mut rc, mut wb, mut wc) = prove_libra_sumcheck(
+        let (mut sumcheck_proof, mut wb, mut wc) = prove_libra_sumcheck(
             ProveLibraInput {
                 claimed_sum: &claimed_sum,
                 igz: &igz,
@@ -125,9 +117,14 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             &mut transcript,
         );
 
+        let (mut rb, mut rc) = (
+            sumcheck_proof.challenges[..sumcheck_proof.challenges.len() / 2].to_vec(),
+            sumcheck_proof.challenges[sumcheck_proof.challenges.len() / 2..].to_vec(),
+        );
+
         // Add messages to the transcript
-        transcript.observe_ext_element(&[wb]);
-        transcript.observe_ext_element(&[wc]);
+        transcript.observe_ext_element(&[wb.to_extension_field()]);
+        transcript.observe_ext_element(&[wc.to_extension_field()]);
         transcript.observe_ext_element(&[sumcheck_proof.claimed_sum.to_extension_field()]);
         transcript.observe_ext_element(&sumcheck_proof.round_polynomials.iter().fold(
             vec![],
@@ -147,24 +144,18 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
         wcs.push(wc);
 
         // Samples alpha and beta for folding
-        let mut alpha_n_beta = transcript.sample_n_challenges(2);
+        let mut alpha_n_beta = transcript
+            .sample_n_challenges(2)
+            .iter()
+            .map(|val| Fields::Extension(*val))
+            .collect::<Vec<Fields<F, E>>>();
 
         for i in (1..circuit.layers.len()).rev() {
             // Get addi and muli
             let (add_i, mul_i) = LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, i - 1);
 
-            claimed_sum = (Fields::Extension(alpha_n_beta[0])
-                * w_i_plus_one_poly.evaluate(
-                    &rb.iter()
-                        .map(|val| Fields::Extension(*val))
-                        .collect::<Vec<Fields<F, E>>>(),
-                ))
-                + (Fields::Extension(alpha_n_beta[1])
-                    * w_i_plus_one_poly.evaluate(
-                        &rc.iter()
-                            .map(|val| Fields::Extension(*val))
-                            .collect::<Vec<Fields<F, E>>>(),
-                    ));
+            claimed_sum = alpha_n_beta[0] * w_i_plus_one_poly.evaluate(&rb)
+                + alpha_n_beta[1] * w_i_plus_one_poly.evaluate(&rc);
 
             // Gets w_i+1
             w_i_plus_one_poly = MultilinearPoly::new_from_vec(
@@ -179,19 +170,11 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             igz = igz_n_to_1_fold(&[&rb, &rc], &alpha_n_beta);
 
             // Gets new addi and muli based on rb, rc, alpha and beta
-            (mul_ahg, add_b_ahg, add_c_ahg) = prepare_phase_one_params(
-                &igz,
-                &add_i,
-                &mul_i,
-                &w_i_plus_one_poly
-                    .evaluations
-                    .iter()
-                    .map(|val| val.to_base_field().unwrap())
-                    .collect::<Vec<F>>(),
-            );
+            (mul_ahg, add_b_ahg, add_c_ahg) =
+                prepare_phase_one_params(&igz, &add_i, &mul_i, &w_i_plus_one_poly.evaluations);
 
             // Proves sumcheck relation using Libra algorithms
-            (sumcheck_proof, rb, rc, wb, wc) = prove_libra_sumcheck(
+            (sumcheck_proof, wb, wc) = prove_libra_sumcheck(
                 ProveLibraInput {
                     claimed_sum: &claimed_sum,
                     igz: &igz,
@@ -205,9 +188,14 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                 &mut transcript,
             );
 
+            (rb, rc) = (
+                sumcheck_proof.challenges[..sumcheck_proof.challenges.len() / 2].to_vec(),
+                sumcheck_proof.challenges[sumcheck_proof.challenges.len() / 2..].to_vec(),
+            );
+
             // Adds the messages to the transcript
-            transcript.observe_ext_element(&[wb]);
-            transcript.observe_ext_element(&[wc]);
+            transcript.observe_ext_element(&[wb.to_extension_field()]);
+            transcript.observe_ext_element(&[wc.to_extension_field()]);
             transcript.observe_ext_element(&[sumcheck_proof.claimed_sum.to_extension_field()]);
             transcript.observe_ext_element(&sumcheck_proof.round_polynomials.iter().fold(
                 vec![],
@@ -227,11 +215,18 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             wcs.push(wc);
 
             // Sample alpha and beta
-            alpha_n_beta = transcript.sample_n_challenges(2);
+            alpha_n_beta = transcript
+                .sample_n_challenges(2)
+                .iter()
+                .map(|val| Fields::Extension(*val))
+                .collect::<Vec<Fields<F, E>>>();
         }
 
         LibraProof::new(
-            output.layers[output.layers.len() - 1].clone(),
+            output.layers[output.layers.len() - 1]
+                .iter()
+                .map(|val| Fields::Base(*val))
+                .collect::<Vec<Fields<F, E>>>(),
             sumcheck_proofs,
             wbs,
             wcs,
@@ -248,14 +243,16 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
         let mut transcript = Transcript::<F, E>::init();
 
         // Adds output to the transcript
-        transcript.observe_base_element(&proofs.circuit_output);
+        transcript.observe_base_element(
+            &proofs
+                .circuit_output
+                .iter()
+                .map(|val| val.to_base_field().unwrap())
+                .collect::<Vec<F>>(),
+        );
 
         // Gets output vector
-        let mut output: Vec<Fields<F, E>> = proofs
-            .circuit_output
-            .iter()
-            .map(|val| Fields::<F, E>::Base(*val))
-            .collect();
+        let mut output: Vec<Fields<F, E>> = proofs.circuit_output;
 
         if output.len() == 1 {
             output.push(Fields::Base(F::zero()));
@@ -300,8 +297,8 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
         let mut rc = rb_n_rc[(rb_n_rc.len() / 2)..].to_vec();
 
         // Add messages to the transcript
-        transcript.observe_ext_element(&[proofs.wbs[0]]);
-        transcript.observe_ext_element(&[proofs.wcs[0]]);
+        transcript.observe_ext_element(&[proofs.wbs[0].to_extension_field()]);
+        transcript.observe_ext_element(&[proofs.wcs[0].to_extension_field()]);
         transcript
             .observe_ext_element(&[proofs.sumcheck_proofs[0].claimed_sum.to_extension_field()]);
         transcript.observe_ext_element(&proofs.sumcheck_proofs[0].round_polynomials.iter().fold(
@@ -321,8 +318,8 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             &add_i,
             &mul_i,
             &g_bc,
-            &Fields::Extension(proofs.wbs[0]),
-            &Fields::Extension(proofs.wcs[0]),
+            &proofs.wbs[0],
+            &proofs.wcs[0],
             circuit.layers.len() - 1,
             n_vars,
         );
@@ -338,8 +335,7 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             .collect::<Vec<Fields<F, E>>>();
 
         // Get claimed sum for the next round by calculating: (alpha * wb) + (beta * wc)
-        claimed_sum = (alpha_n_beta[0] * Fields::Extension(proofs.wbs[0]))
-            + (alpha_n_beta[1] * Fields::Extension(proofs.wcs[0]));
+        claimed_sum = (alpha_n_beta[0] * proofs.wbs[0]) + (alpha_n_beta[1] * proofs.wcs[0]);
 
         for i in 1..(proofs.sumcheck_proofs.len() - 1) {
             // Assert claimed sum equals prover claimed sum
@@ -373,8 +369,8 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                     rb: &rb,
                     rc: &rc,
                     bc: &rb_n_rc,
-                    wb: &Fields::Extension(proofs.wbs[i]),
-                    wc: &Fields::Extension(proofs.wcs[i]),
+                    wb: &proofs.wbs[i],
+                    wc: &proofs.wcs[i],
                 },
                 proofs.sumcheck_proofs.len() - i - 1,
                 n_vars,
@@ -387,8 +383,8 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
             );
 
             // Add messages to the transcript
-            transcript.observe_ext_element(&[proofs.wbs[i]]);
-            transcript.observe_ext_element(&[proofs.wcs[i]]);
+            transcript.observe_ext_element(&[proofs.wbs[i].to_extension_field()]);
+            transcript.observe_ext_element(&[proofs.wcs[i].to_extension_field()]);
             transcript
                 .observe_ext_element(&[proofs.sumcheck_proofs[i].claimed_sum.to_extension_field()]);
             transcript.observe_ext_element(
@@ -413,8 +409,7 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                 .collect::<Vec<Fields<F, E>>>();
 
             // Get claimed sum for the next round
-            claimed_sum = (alpha_n_beta[0] * Fields::Extension(proofs.wbs[i]))
-                + (alpha_n_beta[1] * Fields::Extension(proofs.wcs[i]));
+            claimed_sum = (alpha_n_beta[0] * proofs.wbs[i]) + (alpha_n_beta[1] * proofs.wcs[i]);
 
             rb = rb_n_rc[..rb_n_rc.len() / 2].to_vec();
 
@@ -443,8 +438,8 @@ impl<F: Field + PrimeField32, E: ExtensionField<F>> Libra<F, E> {
                 rb: &rb,
                 rc: &rc,
                 bc: &rb_n_rc,
-                wb: &Fields::Extension(proofs.wbs[proofs.sumcheck_proofs.len() - 1]),
-                wc: &Fields::Extension(proofs.wcs[proofs.sumcheck_proofs.len() - 1]),
+                wb: &proofs.wbs[proofs.sumcheck_proofs.len() - 1],
+                wc: &proofs.wcs[proofs.sumcheck_proofs.len() - 1],
             },
             proofs.sumcheck_proofs.len() - 1,
             n_vars,
