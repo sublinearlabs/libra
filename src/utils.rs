@@ -148,7 +148,6 @@ pub fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
             w_i_plus_one_poly.clone(),
         ],
         2,
-        n_vars,
         Rc::new(|data: &[Fields<F, E>]| (data[3] * (data[0] + data[1])) + data[2]),
     )
 }
@@ -185,7 +184,6 @@ pub fn build_phase_two_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
             w_i_plus_one_poly.clone(),
         ],
         2,
-        n_vars,
         Rc::new(|data: &[Fields<F, E>]| {
             (data[0] * data[2] * data[3]) + (data[1] * (data[2] + data[3]))
         }),

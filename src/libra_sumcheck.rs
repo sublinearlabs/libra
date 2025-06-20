@@ -138,7 +138,6 @@ mod tests {
         let claimed_sum = VPoly::new(
             vec![add_i_bln.clone(), mul_i_bln.clone(), wb_bln, wc_bln],
             2,
-            4,
             Rc::new(|data: &[Fields<F, E>]| {
                 (data[0] * (data[2] + data[3])) + (data[1] * data[2] * data[3])
             }),
@@ -291,7 +290,6 @@ mod tests {
         let claimed_sum = VPoly::new(
             vec![new_addi_bln.clone(), new_muli_bln.clone(), wb_bln, wc_bln],
             2,
-            4,
             Rc::new(|data: &[Fields<F, E>]| {
                 (data[0] * (data[2] + data[3])) + (data[1] * data[2] * data[3])
             }),
