@@ -89,10 +89,7 @@ name = "libra"
 version = "0.1.0"
 dependencies = [
  "circuits",
- "p3-challenger",
  "p3-field",
- "p3-goldilocks",
- "p3-keccak",
  "p3-mersenne-31",
  "poly",
  "sum_check",
