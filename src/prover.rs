@@ -26,18 +26,14 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
     let mut wcs = vec![];
 
     // Get the output vector
-    let mut output_evals: Vec<Fields<F, E>> = output.layers[circuit.layers.len()]
+    let output_evals: Vec<Fields<F, E>> = output.layers[circuit.layers.len()]
         .iter()
         .map(|val| Fields::<F, E>::Base(*val))
         .collect();
 
-    if output_evals.len() == 1 {
-        output_evals.push(Fields::Base(F::zero()));
-    }
-
     // Build the output polynomial
     let output_mle =
-        MultilinearPoly::new_from_vec((output_evals.len() as f64).log2() as usize, output_evals);
+        MultilinearPoly::new_extend_to_power_of_two(output_evals, Fields::Base(F::zero()));
 
     // Adds the output to the transcript
     transcript.observe_base_element(&output.layers[circuit.layers.len()]);
@@ -46,20 +42,20 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
     let (add_i, mul_i) =
         LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, circuit.layers.len() - 1);
 
+    let w_i_plus_one_eval = output.layers[circuit.layers.len() - 1]
+        .iter()
+        .map(|val| Fields::Base(*val))
+        .collect::<Vec<Fields<F, E>>>();
+
     // Gets w_i+1
-    let mut w_i_plus_one_poly = MultilinearPoly::new_from_vec(
-        (output.layers[circuit.layers.len() - 1].len() as f64).log2() as usize,
-        output.layers[circuit.layers.len() - 1]
-            .iter()
-            .map(|val| Fields::Base(*val))
-            .collect::<Vec<Fields<F, E>>>(),
-    );
+    let mut w_i_plus_one_poly =
+        MultilinearPoly::new_extend_to_power_of_two(w_i_plus_one_eval, Fields::Base(F::zero()));
 
     // Sample random challenge for the first round
     let g = transcript
         .sample_n_challenges(output_mle.num_vars())
-        .iter()
-        .map(|val| Fields::Extension(*val))
+        .into_iter()
+        .map(Fields::Extension)
         .collect::<Vec<Fields<F, E>>>();
 
     let mut igz = generate_eq(&g);
@@ -91,20 +87,18 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
     );
 
     // Add messages to the transcript
-    transcript.observe_ext_element(&[wb.to_extension_field()]);
-    transcript.observe_ext_element(&[wc.to_extension_field()]);
-    transcript.observe_ext_element(&[sumcheck_proof.claimed_sum.to_extension_field()]);
-    transcript.observe_ext_element(&sumcheck_proof.round_polynomials.iter().fold(
-        vec![],
-        |mut acc, val| {
-            acc.extend(
-                val.iter()
-                    .map(|val| val.to_extension_field())
-                    .collect::<Vec<E>>(),
-            );
-            acc
-        },
-    ));
+    transcript.observe(&[wb]);
+    transcript.observe(&[wc]);
+    transcript.observe(&[sumcheck_proof.claimed_sum]);
+    transcript.observe(
+        &sumcheck_proof
+            .round_polynomials
+            .iter()
+            .fold(vec![], |mut acc, val| {
+                acc.extend(val);
+                acc
+            }),
+    );
 
     // Adds messages to the proof
     sumcheck_proofs.push(sumcheck_proof);
@@ -114,8 +108,8 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
     // Samples alpha and beta for folding
     let mut alpha_n_beta = transcript
         .sample_n_challenges(2)
-        .iter()
-        .map(|val| Fields::Extension(*val))
+        .into_iter()
+        .map(Fields::Extension)
         .collect::<Vec<Fields<F, E>>>();
 
     for i in (1..circuit.layers.len()).rev() {
@@ -125,14 +119,14 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
         claimed_sum = alpha_n_beta[0] * w_i_plus_one_poly.evaluate(&rb)
             + alpha_n_beta[1] * w_i_plus_one_poly.evaluate(&rc);
 
+        let w_i_plus_one_eval = output.layers[i - 1]
+            .iter()
+            .map(|val| Fields::<F, E>::Base(*val))
+            .collect();
+
         // Gets w_i+1
-        w_i_plus_one_poly = MultilinearPoly::new_from_vec(
-            (output.layers[i - 1].len() as f64).log2() as usize,
-            output.layers[i - 1]
-                .iter()
-                .map(|val| Fields::<F, E>::Base(*val))
-                .collect(),
-        );
+        w_i_plus_one_poly =
+            MultilinearPoly::new_extend_to_power_of_two(w_i_plus_one_eval, Fields::Base(F::zero()));
 
         // Fold Igz for rb and rc using alpha and beta
         igz = igz_n_to_1_fold(&[&rb, &rc], &alpha_n_beta);
@@ -162,17 +156,13 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
         );
 
         // Adds the messages to the transcript
-        transcript.observe_ext_element(&[wb.to_extension_field()]);
-        transcript.observe_ext_element(&[wc.to_extension_field()]);
-        transcript.observe_ext_element(&[sumcheck_proof.claimed_sum.to_extension_field()]);
-        transcript.observe_ext_element(&sumcheck_proof.round_polynomials.iter().fold(
+        transcript.observe(&[wb]);
+        transcript.observe(&[wc]);
+        transcript.observe(&[sumcheck_proof.claimed_sum]);
+        transcript.observe(&sumcheck_proof.round_polynomials.iter().fold(
             vec![],
             |mut acc, val| {
-                acc.extend(
-                    val.iter()
-                        .map(|val| val.to_extension_field())
-                        .collect::<Vec<E>>(),
-                );
+                acc.extend(val);
                 acc
             },
         ));
@@ -185,8 +175,8 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
         // Sample alpha and beta
         alpha_n_beta = transcript
             .sample_n_challenges(2)
-            .iter()
-            .map(|val| Fields::Extension(*val))
+            .into_iter()
+            .map(Fields::Extension)
             .collect::<Vec<Fields<F, E>>>();
     }
 

@@ -48,13 +48,12 @@ fn test_libra_protocol() {
 
     let input = [1, 2, 3, 2, 1, 2, 4, 1]
         .into_iter()
-        .map(Mersenne31::from_canonical_usize)
-        .collect::<Vec<Mersenne31>>();
+        .map(F::from_canonical_usize)
+        .collect::<Vec<F>>();
 
     let output = circuit.excecute(&input);
 
-    let proof: LibraProof<Mersenne31, BinomialExtensionField<Mersenne31, 3>> =
-        prove(&circuit, output);
+    let proof: LibraProof<F, E> = prove(&circuit, output);
 
     let verify = verify(&circuit, proof, input);
 
@@ -339,30 +338,14 @@ fn test_precompute() {
     let precomputed = generate_eq(&challenges);
 
     let expected = [
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(0),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(0),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(0),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(0),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(8),
-        )),
-        -Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(10),
-        )),
-        -Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(12),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(15),
-        )),
+        Fields::Extension(E::from_base(F::from_canonical_usize(0))),
+        Fields::Extension(E::from_base(F::from_canonical_usize(0))),
+        Fields::Extension(E::from_base(F::from_canonical_usize(0))),
+        Fields::Extension(E::from_base(F::from_canonical_usize(0))),
+        Fields::Extension(E::from_base(F::from_canonical_usize(8))),
+        -Fields::Extension(E::from_base(F::from_canonical_usize(10))),
+        -Fields::Extension(E::from_base(F::from_canonical_usize(12))),
+        Fields::Extension(E::from_base(F::from_canonical_usize(15))),
     ];
 
     assert_eq!(precomputed, expected);
@@ -393,44 +376,19 @@ fn test_build_ahg() {
     // f(out, left, right) in the sparse form
     let f1 = vec![(0, 0, 1), (1, 2, 3), (2, 4, 5), (3, 6, 7)];
 
-    let f3 = vec![
-        Fields::from_u32(3),
-        Fields::from_u32(4),
-        Fields::from_u32(5),
-        Fields::from_u32(6),
-        Fields::from_u32(7),
-        Fields::from_u32(8),
-        Fields::from_u32(9),
-        Fields::from_u32(10),
-    ];
+    let f3 = Fields::<F, E>::from_u32_vec(vec![3, 4, 5, 6, 7, 8, 9, 10]);
 
     let ahg = initialize_phase_one(&igz, &f1, &f3);
 
     let expected = [
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_u32(32),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_u32(0),
-        )),
-        -Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_u32(60),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_u32(0),
-        )),
-        -Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_u32(96),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_u32(0),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_u32(150),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_u32(0),
-        )),
+        Fields::Extension(E::from_base(F::from_canonical_u32(32))),
+        Fields::Extension(E::from_base(F::from_canonical_u32(0))),
+        -Fields::Extension(E::from_base(F::from_canonical_u32(60))),
+        Fields::Extension(E::from_base(F::from_canonical_u32(0))),
+        -Fields::Extension(E::from_base(F::from_canonical_u32(96))),
+        Fields::Extension(E::from_base(F::from_canonical_u32(0))),
+        Fields::Extension(E::from_base(F::from_canonical_u32(150))),
+        Fields::Extension(E::from_base(F::from_canonical_u32(0))),
     ];
 
     assert_eq!(ahg, expected);
@@ -485,30 +443,14 @@ fn test_build_af1() {
     let af1 = initialize_phase_two(&igz, &iux, &f1);
 
     let expected = [
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(0),
-        )),
-        -Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(288),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(0),
-        )),
-        -Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(420),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(0),
-        )),
-        -Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(576),
-        )),
-        Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(0),
-        )),
-        -Fields::Extension(BinomialExtensionField::from_base(
-            Mersenne31::from_canonical_usize(840),
-        )),
+        Fields::Extension(E::from_base(F::from_canonical_usize(0))),
+        -Fields::Extension(E::from_base(F::from_canonical_usize(288))),
+        Fields::Extension(E::from_base(F::from_canonical_usize(0))),
+        -Fields::Extension(E::from_base(F::from_canonical_usize(420))),
+        Fields::Extension(E::from_base(F::from_canonical_usize(0))),
+        -Fields::Extension(E::from_base(F::from_canonical_usize(576))),
+        Fields::Extension(E::from_base(F::from_canonical_usize(0))),
+        -Fields::Extension(E::from_base(F::from_canonical_usize(840))),
     ];
 
     assert_eq!(af1, expected);

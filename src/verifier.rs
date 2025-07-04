@@ -26,13 +26,7 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
     let mut transcript = Transcript::<F, E>::init();
 
     // Adds output to the transcript
-    transcript.observe_base_element(
-        &proofs
-            .circuit_output
-            .iter()
-            .map(|val| val.to_base_field().unwrap())
-            .collect::<Vec<F>>(),
-    );
+    transcript.observe(&proofs.circuit_output);
 
     // Gets output vector
     let mut output: Vec<Fields<F, E>> = proofs.circuit_output;
@@ -47,8 +41,8 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
     // Samples challenge for round one
     let g = transcript
         .sample_n_challenges(output_mle.num_vars())
-        .iter()
-        .map(|val| Fields::Extension(*val))
+        .into_iter()
+        .map(Fields::Extension)
         .collect::<Vec<Fields<F, E>>>();
 
     // Gets claimed sum by evaluating output polynomial at random challenge
@@ -78,17 +72,13 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
     let mut rc = rb_n_rc[(rb_n_rc.len() / 2)..].to_vec();
 
     // Add messages to the transcript
-    transcript.observe_ext_element(&[proofs.wbs[0].to_extension_field()]);
-    transcript.observe_ext_element(&[proofs.wcs[0].to_extension_field()]);
-    transcript.observe_ext_element(&[proofs.sumcheck_proofs[0].claimed_sum.to_extension_field()]);
-    transcript.observe_ext_element(&proofs.sumcheck_proofs[0].round_polynomials.iter().fold(
+    transcript.observe(&[proofs.wbs[0]]);
+    transcript.observe(&[proofs.wcs[0]]);
+    transcript.observe(&[proofs.sumcheck_proofs[0].claimed_sum]);
+    transcript.observe(&proofs.sumcheck_proofs[0].round_polynomials.iter().fold(
         vec![],
         |mut acc, val| {
-            acc.extend(
-                val.iter()
-                    .map(|val| val.to_extension_field())
-                    .collect::<Vec<E>>(),
-            );
+            acc.extend(val);
             acc
         },
     ));
@@ -110,8 +100,8 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
     // Get alpha and beta
     let mut alpha_n_beta = transcript
         .sample_n_challenges(2)
-        .iter()
-        .map(|val| Fields::Extension(*val))
+        .into_iter()
+        .map(Fields::Extension)
         .collect::<Vec<Fields<F, E>>>();
 
     // Get claimed sum for the next round by calculating: (alpha * wb) + (beta * wc)
@@ -163,18 +153,13 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
         );
 
         // Add messages to the transcript
-        transcript.observe_ext_element(&[proofs.wbs[i].to_extension_field()]);
-        transcript.observe_ext_element(&[proofs.wcs[i].to_extension_field()]);
-        transcript
-            .observe_ext_element(&[proofs.sumcheck_proofs[i].claimed_sum.to_extension_field()]);
-        transcript.observe_ext_element(&proofs.sumcheck_proofs[i].round_polynomials.iter().fold(
+        transcript.observe(&[proofs.wbs[i]]);
+        transcript.observe(&[proofs.wcs[i]]);
+        transcript.observe(&[proofs.sumcheck_proofs[i].claimed_sum]);
+        transcript.observe(&proofs.sumcheck_proofs[i].round_polynomials.iter().fold(
             vec![],
             |mut acc, val| {
-                acc.extend(
-                    val.iter()
-                        .map(|val| val.to_extension_field())
-                        .collect::<Vec<E>>(),
-                );
+                acc.extend(val);
                 acc
             },
         ));
@@ -182,8 +167,8 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
         // Sample alpha and beta
         alpha_n_beta = transcript
             .sample_n_challenges(2)
-            .iter()
-            .map(|val| Fields::Extension(*val))
+            .into_iter()
+            .map(Fields::Extension)
             .collect::<Vec<Fields<F, E>>>();
 
         // Get claimed sum for the next round
