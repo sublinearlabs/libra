@@ -29,14 +29,10 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
     transcript.observe(&proofs.circuit_output);
 
     // Gets output vector
-    let mut output: Vec<Fields<F, E>> = proofs.circuit_output;
-
-    if output.len() == 1 {
-        output.push(Fields::Base(F::zero()));
-    }
+    let output: Vec<Fields<F, E>> = proofs.circuit_output;
 
     // Build output polynomial
-    let output_mle = MultilinearPoly::new_from_vec((output.len() as f64).log2() as usize, output);
+    let output_mle = MultilinearPoly::new_extend_to_power_of_two(output, Fields::Base(F::zero()));
 
     // Samples challenge for round one
     let g = transcript
@@ -48,66 +44,15 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
     // Gets claimed sum by evaluating output polynomial at random challenge
     let mut claimed_sum = output_mle.evaluate(&g);
 
-    // Asserts claimed sum is equal to the proof claimed sum
-    assert_eq!(claimed_sum, proofs.sumcheck_proofs[0].claimed_sum);
+    let mut challenges = vec![];
 
-    // Verify prover sumcheck
-    let (sumcheck_claimed_sum, rb_n_rc) = SumCheck::<F, E, MultilinearPoly<F, E>>::verify_partial(
-        &proofs.sumcheck_proofs[0],
-        &mut transcript,
-    );
+    let mut alpha_n_beta = vec![];
 
-    // Get the correct number of vars
-    let n_vars = compute_num_vars(circuit.layers.len() - 1, circuit.layers.len() - 1);
+    let mut rb = vec![];
 
-    // Gets addi and muli
-    let (add_i, mul_i) =
-        LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, circuit.layers.len() - 1);
+    let mut rc = vec![];
 
-    // Gets challenges for use in oracle check
-    let g_bc = [g.clone(), rb_n_rc.clone()].concat();
-
-    let mut rb = rb_n_rc[..rb_n_rc.len() / 2].to_vec();
-
-    let mut rc = rb_n_rc[(rb_n_rc.len() / 2)..].to_vec();
-
-    // Add messages to the transcript
-    transcript.observe(&[proofs.wbs[0]]);
-    transcript.observe(&[proofs.wcs[0]]);
-    transcript.observe(&[proofs.sumcheck_proofs[0].claimed_sum]);
-    transcript.observe(&proofs.sumcheck_proofs[0].round_polynomials.iter().fold(
-        vec![],
-        |mut acc, val| {
-            acc.extend(val);
-            acc
-        },
-    ));
-
-    // Calculate the expected claimed sum given wb and wc and challenges
-    let expected_sum = eval_layer_mle_given_wb_n_wc(
-        &add_i,
-        &mul_i,
-        &g_bc,
-        &proofs.wbs[0],
-        &proofs.wcs[0],
-        circuit.layers.len() - 1,
-        n_vars,
-    );
-
-    // Performs oracle check on the first round
-    assert_eq!(sumcheck_claimed_sum, expected_sum.to_extension_field());
-
-    // Get alpha and beta
-    let mut alpha_n_beta = transcript
-        .sample_n_challenges(2)
-        .into_iter()
-        .map(Fields::Extension)
-        .collect::<Vec<Fields<F, E>>>();
-
-    // Get claimed sum for the next round by calculating: (alpha * wb) + (beta * wc)
-    claimed_sum = (alpha_n_beta[0] * proofs.wbs[0]) + (alpha_n_beta[1] * proofs.wcs[0]);
-
-    for i in 1..(proofs.sumcheck_proofs.len() - 1) {
+    for i in 0..proofs.sumcheck_proofs.len() - 1 {
         // Assert claimed sum equals prover claimed sum
         assert_eq!(claimed_sum, proofs.sumcheck_proofs[i].claimed_sum);
 
@@ -117,6 +62,8 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
                 &proofs.sumcheck_proofs[i],
                 &mut transcript,
             );
+
+        challenges = rb_n_rc;
 
         // Get the correct number of vars
         let n_vars = compute_num_vars(
@@ -131,20 +78,34 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
         );
 
         // Calculates expected claimed sum given wb and wc values
-        let expected_claimed_sum = eval_new_addi_n_muli_at_rb_bc_n_rc_bc(
-            EvalNewAddNMulInput {
-                add_i: &add_i,
-                mul_i: &mul_i,
-                alpha_n_beta: &alpha_n_beta,
-                rb: &rb,
-                rc: &rc,
-                bc: &rb_n_rc,
-                wb: &proofs.wbs[i],
-                wc: &proofs.wcs[i],
-            },
-            proofs.sumcheck_proofs.len() - i - 1,
-            n_vars,
-        );
+        let expected_claimed_sum = if i == 0 {
+            let g_bc = [g.clone(), challenges.clone()].concat();
+
+            eval_layer_mle_given_wb_n_wc(
+                &add_i,
+                &mul_i,
+                &g_bc,
+                &proofs.wbs[0],
+                &proofs.wcs[0],
+                circuit.layers.len() - 1,
+                n_vars,
+            )
+        } else {
+            eval_new_addi_n_muli_at_rb_bc_n_rc_bc(
+                EvalNewAddNMulInput {
+                    add_i: &add_i,
+                    mul_i: &mul_i,
+                    alpha_n_beta: &alpha_n_beta,
+                    rb: &rb,
+                    rc: &rc,
+                    bc: &challenges,
+                    wb: &proofs.wbs[i],
+                    wc: &proofs.wcs[i],
+                },
+                proofs.sumcheck_proofs.len() - i - 1,
+                n_vars,
+            )
+        };
 
         // Do oracle check
         assert_eq!(
@@ -171,12 +132,29 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
             .map(Fields::Extension)
             .collect::<Vec<Fields<F, E>>>();
 
+        let (wb, wc) = 
+        // if i == proofs.sumcheck_proofs.len() {
+        //     let input_poly: MultilinearPoly<F, E> = MultilinearPoly::new_from_vec(
+        //         (input.len() as f64).log2() as usize,
+        //         input.iter().map(|val| Fields::Base(*val)).collect(),
+        //     );
+
+        //     // Calculate wb and wc on the input polynomial
+        //     let wb = input_poly.evaluate(&challenges[..challenges.len() / 2]);
+
+        //     let wc = input_poly.evaluate(&challenges[(challenges.len() / 2)..]);
+
+        //     (wb, wc)
+        // } else {
+        // };
+        (proofs.wbs[i], proofs.wcs[i]);
+
         // Get claimed sum for the next round
-        claimed_sum = (alpha_n_beta[0] * proofs.wbs[i]) + (alpha_n_beta[1] * proofs.wcs[i]);
+        claimed_sum = (alpha_n_beta[0] * wb) + (alpha_n_beta[1] * wc);
 
-        rb = rb_n_rc[..rb_n_rc.len() / 2].to_vec();
+        rb = challenges[..challenges.len() / 2].to_vec();
 
-        rc = rb_n_rc[(rb_n_rc.len() / 2)..].to_vec();
+        rc = challenges[(challenges.len() / 2)..].to_vec();
     }
 
     // Verify sumcheck proof for the final round
@@ -191,35 +169,13 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
     // Get the number of vars
     let n_vars = compute_num_vars(0, circuit.layers.len() - 1);
 
-    // Calculate expected claimed sum given wb and wc
-    let expected_claimed_sum = eval_new_addi_n_muli_at_rb_bc_n_rc_bc(
-        EvalNewAddNMulInput {
-            add_i: &add_i,
-            mul_i: &mul_i,
-            alpha_n_beta: &alpha_n_beta,
-            rb: &rb,
-            rc: &rc,
-            bc: &rb_n_rc,
-            wb: &proofs.wbs[proofs.sumcheck_proofs.len() - 1],
-            wc: &proofs.wcs[proofs.sumcheck_proofs.len() - 1],
-        },
-        proofs.sumcheck_proofs.len() - 1,
-        n_vars,
-    );
-
-    // Do oracle check
-    assert_eq!(
-        sumcheck_claimed_sum,
-        expected_claimed_sum.to_extension_field()
-    );
-
     // Get the input polynomial
-    let input_poly: MultilinearPoly<F, E> = MultilinearPoly::new_from_vec(
-        (input.len() as f64).log2() as usize,
+    let input_poly: MultilinearPoly<F, E> = MultilinearPoly::new_extend_to_power_of_two(
         input.iter().map(|val| Fields::Base(*val)).collect(),
+        Fields::Base(F::zero()),
     );
 
-    // Calculate wb and wc on the input polynomial
+    // // Calculate wb and wc on the input polynomial
     let wb = input_poly.evaluate(&rb_n_rc[..rb_n_rc.len() / 2]);
 
     let wc = input_poly.evaluate(&rb_n_rc[(rb_n_rc.len() / 2)..]);
@@ -241,7 +197,7 @@ pub fn verify<F: Field + PrimeField32, E: ExtensionField<F>>(
     );
 
     // Do the oracle check
-    assert_eq!(expected_claimed_sum, oracle_query);
+    assert_eq!(sumcheck_claimed_sum, oracle_query.to_extension_field());
 
     Ok(true)
 }
