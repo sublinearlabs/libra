@@ -1,6 +1,6 @@
 use circuits::layered_circuit::utils::get_gate_properties;
 use p3_field::{ExtensionField, Field};
-use poly::{Fields, MultilinearExtension, mle::MultilinearPoly, utils::generate_eq, vpoly::VPoly};
+use poly::{Fields, mle::MultilinearPoly, utils::generate_eq, vpoly::VPoly};
 use std::rc::Rc;
 use sum_check::primitives::SumCheckProof;
 
@@ -123,13 +123,13 @@ pub fn build_phase_one_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
     add_c_ahg: &[Fields<F, E>],
     w_i_plus_one_poly: &MultilinearPoly<F, E>,
 ) -> VPoly<F, E> {
-    let n_vars = w_i_plus_one_poly.num_vars();
+    let padding = Fields::Extension(E::zero());
 
     VPoly::new(
         vec![
-            MultilinearPoly::new_from_vec(n_vars, mul_ahg.to_vec()),
-            MultilinearPoly::new_from_vec(n_vars, add_b_ahg.to_vec()),
-            MultilinearPoly::new_from_vec(n_vars, add_c_ahg.to_vec()),
+            MultilinearPoly::new_extend_to_power_of_two(mul_ahg.to_vec(), padding),
+            MultilinearPoly::new_extend_to_power_of_two(add_b_ahg.to_vec(), padding),
+            MultilinearPoly::new_extend_to_power_of_two(add_c_ahg.to_vec(), padding),
             w_i_plus_one_poly.clone(),
         ],
         2,
@@ -159,13 +159,20 @@ pub fn build_phase_two_libra_sumcheck_poly<F: Field, E: ExtensionField<F>>(
     wb: &Fields<F, E>,
     w_i_plus_one_poly: &MultilinearPoly<F, E>,
 ) -> VPoly<F, E> {
-    let n_vars = w_i_plus_one_poly.num_vars();
-
     VPoly::new(
         vec![
-            MultilinearPoly::new_from_vec(n_vars, mul_af1.to_vec()),
-            MultilinearPoly::new_from_vec(n_vars, add_af1.to_vec()),
-            MultilinearPoly::new_from_vec(n_vars, vec![*wb; w_i_plus_one_poly.evaluations.len()]),
+            MultilinearPoly::new_extend_to_power_of_two(
+                mul_af1.to_vec(),
+                Fields::Extension(E::zero()),
+            ),
+            MultilinearPoly::new_extend_to_power_of_two(
+                add_af1.to_vec(),
+                Fields::Extension(E::zero()),
+            ),
+            MultilinearPoly::new_extend_to_power_of_two(
+                vec![*wb; w_i_plus_one_poly.evaluations.len()],
+                Fields::Extension(E::zero()),
+            ),
             w_i_plus_one_poly.clone(),
         ],
         2,

@@ -26,123 +26,72 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
     let mut wcs = vec![];
 
     // Get the output vector
-    let mut output_evals: Vec<Fields<F, E>> = output.layers[circuit.layers.len()]
+    let output_evals: Vec<Fields<F, E>> = output.layers[circuit.layers.len()]
         .iter()
         .map(|val| Fields::<F, E>::Base(*val))
         .collect();
 
-    if output_evals.len() == 1 {
-        output_evals.push(Fields::Base(F::zero()));
-    }
-
     // Build the output polynomial
     let output_mle =
-        MultilinearPoly::new_from_vec((output_evals.len() as f64).log2() as usize, output_evals);
+        MultilinearPoly::new_extend_to_power_of_two(output_evals, Fields::Base(F::zero()));
 
     // Adds the output to the transcript
     transcript.observe_base_element(&output.layers[circuit.layers.len()]);
 
-    // Gets the addi and muli for the output layer
-    let (add_i, mul_i) =
-        LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, circuit.layers.len() - 1);
-
-    // Gets w_i+1
-    let mut w_i_plus_one_poly = MultilinearPoly::new_from_vec(
-        (output.layers[circuit.layers.len() - 1].len() as f64).log2() as usize,
-        output.layers[circuit.layers.len() - 1]
-            .iter()
-            .map(|val| Fields::Base(*val))
-            .collect::<Vec<Fields<F, E>>>(),
-    );
-
     // Sample random challenge for the first round
     let g = transcript
         .sample_n_challenges(output_mle.num_vars())
-        .iter()
-        .map(|val| Fields::Extension(*val))
+        .into_iter()
+        .map(Fields::Extension)
         .collect::<Vec<Fields<F, E>>>();
 
-    let mut igz = generate_eq(&g);
+    let mut challenges = vec![];
+    let mut wb = Fields::Extension(E::zero());
+    let mut wc = Fields::Extension(E::zero());
+    let mut alpha_n_beta = vec![];
 
-    // Prepares parameters for phase one of Libra
-    let (mut mul_ahg, mut add_b_ahg, mut add_c_ahg) =
-        prepare_phase_one_params(&igz, &add_i, &mul_i, &w_i_plus_one_poly.evaluations);
+    for i in (1..=circuit.layers.len()).rev() {
+        let claimed_sum = if i == circuit.layers.len() {
+            output_mle.evaluate(&g)
+        } else {
+            // Sample alpha and beta
+            alpha_n_beta = transcript
+                .sample_n_challenges(2)
+                .into_iter()
+                .map(Fields::Extension)
+                .collect::<Vec<Fields<F, E>>>();
+            (alpha_n_beta[0] * wb) + (alpha_n_beta[1] * wc)
+        };
 
-    let mut claimed_sum = output_mle.evaluate(&g);
-
-    // Proves the sumcheck relation using Libra algorithms
-    let (mut sumcheck_proof, mut wb, mut wc) = prove_libra_sumcheck(
-        ProveLibraInput {
-            claimed_sum: &claimed_sum,
-            igz: &igz,
-            mul_ahg: &mul_ahg,
-            add_b_ahg: &add_b_ahg,
-            add_c_ahg: &add_c_ahg,
-            add_i: &add_i,
-            mul_i: &mul_i,
-            w_i_plus_one_poly: &w_i_plus_one_poly,
-        },
-        &mut transcript,
-    );
-
-    let (mut rb, mut rc) = (
-        sumcheck_proof.challenges[..sumcheck_proof.challenges.len() / 2].to_vec(),
-        sumcheck_proof.challenges[sumcheck_proof.challenges.len() / 2..].to_vec(),
-    );
-
-    // Add messages to the transcript
-    transcript.observe_ext_element(&[wb.to_extension_field()]);
-    transcript.observe_ext_element(&[wc.to_extension_field()]);
-    transcript.observe_ext_element(&[sumcheck_proof.claimed_sum.to_extension_field()]);
-    transcript.observe_ext_element(&sumcheck_proof.round_polynomials.iter().fold(
-        vec![],
-        |mut acc, val| {
-            acc.extend(
-                val.iter()
-                    .map(|val| val.to_extension_field())
-                    .collect::<Vec<E>>(),
-            );
-            acc
-        },
-    ));
-
-    // Adds messages to the proof
-    sumcheck_proofs.push(sumcheck_proof);
-    wbs.push(wb);
-    wcs.push(wc);
-
-    // Samples alpha and beta for folding
-    let mut alpha_n_beta = transcript
-        .sample_n_challenges(2)
-        .iter()
-        .map(|val| Fields::Extension(*val))
-        .collect::<Vec<Fields<F, E>>>();
-
-    for i in (1..circuit.layers.len()).rev() {
         // Get addi and muli
         let (add_i, mul_i) = LibraGKRLayeredCircuitTr::<F, E>::add_and_mul_mle(circuit, i - 1);
 
-        claimed_sum = alpha_n_beta[0] * w_i_plus_one_poly.evaluate(&rb)
-            + alpha_n_beta[1] * w_i_plus_one_poly.evaluate(&rc);
+        let w_i_plus_one_eval = output.layers[i - 1]
+            .iter()
+            .map(|val| Fields::<F, E>::Base(*val))
+            .collect();
 
         // Gets w_i+1
-        w_i_plus_one_poly = MultilinearPoly::new_from_vec(
-            (output.layers[i - 1].len() as f64).log2() as usize,
-            output.layers[i - 1]
-                .iter()
-                .map(|val| Fields::<F, E>::Base(*val))
-                .collect(),
-        );
+        let w_i_plus_one_poly =
+            MultilinearPoly::new_extend_to_power_of_two(w_i_plus_one_eval, Fields::Base(F::zero()));
 
         // Fold Igz for rb and rc using alpha and beta
-        igz = igz_n_to_1_fold(&[&rb, &rc], &alpha_n_beta);
+        let igz = if i == circuit.layers.len() {
+            generate_eq(&g)
+        } else {
+            let (rb, rc) = (
+                challenges[..challenges.len() / 2].to_vec(),
+                challenges[challenges.len() / 2..].to_vec(),
+            );
+            igz_n_to_1_fold(&[&rb, &rc], &alpha_n_beta)
+        };
 
         // Gets new addi and muli based on rb, rc, alpha and beta
-        (mul_ahg, add_b_ahg, add_c_ahg) =
+        let (mul_ahg, add_b_ahg, add_c_ahg) =
             prepare_phase_one_params(&igz, &add_i, &mul_i, &w_i_plus_one_poly.evaluations);
 
         // Proves sumcheck relation using Libra algorithms
-        (sumcheck_proof, wb, wc) = prove_libra_sumcheck(
+        let (sumcheck_proof, wb_eval, wc_eval) = prove_libra_sumcheck(
             ProveLibraInput {
                 claimed_sum: &claimed_sum,
                 igz: &igz,
@@ -156,23 +105,18 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
             &mut transcript,
         );
 
-        (rb, rc) = (
-            sumcheck_proof.challenges[..sumcheck_proof.challenges.len() / 2].to_vec(),
-            sumcheck_proof.challenges[sumcheck_proof.challenges.len() / 2..].to_vec(),
-        );
+        wb = wb_eval;
+        wc = wc_eval;
+        challenges = sumcheck_proof.challenges.to_vec();
 
         // Adds the messages to the transcript
-        transcript.observe_ext_element(&[wb.to_extension_field()]);
-        transcript.observe_ext_element(&[wc.to_extension_field()]);
-        transcript.observe_ext_element(&[sumcheck_proof.claimed_sum.to_extension_field()]);
-        transcript.observe_ext_element(&sumcheck_proof.round_polynomials.iter().fold(
+        transcript.observe(&[wb]);
+        transcript.observe(&[wc]);
+        transcript.observe(&[sumcheck_proof.claimed_sum]);
+        transcript.observe(&sumcheck_proof.round_polynomials.iter().fold(
             vec![],
             |mut acc, val| {
-                acc.extend(
-                    val.iter()
-                        .map(|val| val.to_extension_field())
-                        .collect::<Vec<E>>(),
-                );
+                acc.extend(val);
                 acc
             },
         ));
@@ -181,13 +125,6 @@ pub fn prove<F: Field + PrimeField32, E: ExtensionField<F>>(
         sumcheck_proofs.push(sumcheck_proof);
         wbs.push(wb);
         wcs.push(wc);
-
-        // Sample alpha and beta
-        alpha_n_beta = transcript
-            .sample_n_challenges(2)
-            .iter()
-            .map(|val| Fields::Extension(*val))
-            .collect::<Vec<Fields<F, E>>>();
     }
 
     LibraProof::new(

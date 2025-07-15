@@ -117,10 +117,11 @@ cargo test test_libra_protocol
 ## Performance
 
 The Libra protocol provides:
-- **Prover time**: O(C log C) where C is circuit size
-- **Verifier time**: O(log C)
-- **Proof size**: O(log C)
+- **Prover time**: O(C)
+- **Verifier time**: O(d log C)
+- **Proof size**: O(d log C)
 - **Memory usage**: Linear in circuit size
+where C is circuit size and d is the circuit depth
 
 ## Contributing
 
